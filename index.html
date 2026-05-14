@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>Me, Inc. 個人營運帳本</title>
+
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Me, Inc.">
+<meta name="theme-color" content="#1F3A2E">
+<meta name="mobile-web-app-capable" content="yes">
+
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" sizes="192x192" href="./icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  html, body { background-color: #F5F1EA; }
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: contain;
+  }
+  * { -webkit-tap-highlight-color: transparent; }
+  input, button, select { font-family: inherit; }
+  input[type=number], input[type=text], input[type=date] { font-size: 16px; }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .slide-up { animation: slideUp .25s ease-out; }
+  .fade-in { animation: fadeIn .15s ease-out; }
+  input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; }
+</style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useCallback, useMemo } = React;
+
+// ============ 圖示 ============
+const Icon = ({ d, cls = 'w-4 h-4', sw = 2, ...r }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+       stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"
+       className={cls} {...r}>{d}</svg>
+);
+const Plus  = (p) => <Icon {...p} d={<><path d="M5 12h14"/><path d="M12 5v14"/></>} />;
+const Trash = (p) => <Icon {...p} d={<><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></>} />;
+const X     = (p) => <Icon {...p} d={<><path d="M18 6 6 18"/><path d="m6 6 12 12"/></>} />;
+const ChevronLeft  = (p) => <Icon {...p} d={<polyline points="15 18 9 12 15 6"/>} />;
+const ChevronRight = (p) => <Icon {...p} d={<polyline points="9 18 15 12 9 6"/>} />;
+const ChevronDown  = (p) => <Icon {...p} d={<polyline points="6 9 12 15 18 9"/>} />;
+const Refresh = (p) => <Icon {...p} d={<><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></>} />;
+const Cog = (p) => <Icon {...p} d={<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>} />;
+const CloudOff = (p) => <Icon {...p} d={<><line x1="2" y1="2" x2="22" y2="22"/><path d="M5.78 5.78A7 7 0 0 0 9 19h8.5"/><path d="M10.93 5.09A7 7 0 0 1 22 12a7 7 0 0 1-.5 2.59"/></>} />;
+const Briefcase = (p) => <Icon {...p} d={<><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></>} />;
+const TrendUp = (p) => <Icon {...p} d={<><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></>} />;
+const TrendDown = (p) => <Icon {...p} d={<><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></>} />;
+const Flame = (p) => <Icon {...p} d={<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>} />;
+const ChartLine = (p) => <Icon {...p} d={<><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></>} />;
+const Calendar = (p) => <Icon {...p} d={<><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></>} />;
+
+// ============ 常數 ============
+const STORAGE_API_URL = 'meinc_api_url';
+const STORAGE_QUEUE   = 'meinc_offline_queue';
+const STORAGE_CACHE   = 'meinc_data_cache';
+const STORAGE_CYCLE   = 'meinc_cycle_day';
+
+const INCOME_CATS = [
+  { id: 'salary',     name: '主要薪資', emoji: '💼' },
+  { id: 'side',       name: '副業 / 兼職', emoji: '💻' },
+  { id: 'investment', name: '投資收益', emoji: '📈' },
+  { id: 'bonus',      name: '獎金 / 紅利', emoji: '🎁' },
+  { id: 'other_in',   name: '其他收入', emoji: '📦' },
+];
+
+const DEPARTMENTS = [
+  { id: 'food',     name: '食', fullName: '食 · 餐飲部',     emoji: '🍱', color: '#D97B3E', desc: '三餐、咖啡飲料、聚餐、買菜、零食' },
+  { id: 'cloth',    name: '衣', fullName: '衣 · 形象部',     emoji: '👔', color: '#A87B3D', desc: '服飾、鞋包、美容美髮' },
+  { id: 'housing',  name: '住', fullName: '住 · 後勤部',     emoji: '🏠', color: '#1F3A2E', desc: '房租房貸、水電瓦斯、網路、家具、日用品' },
+  { id: 'transport',name: '行', fullName: '行 · 移動部',     emoji: '🚗', color: '#5B8C5A', desc: '大眾運輸、油錢、計程車、停車、保養' },
+  { id: 'leisure',  name: '娛', fullName: '娛 · 文化部',     emoji: '🎬', color: '#7A5A9F', desc: '訂閱、電影、旅遊、運動、興趣' },
+  { id: 'other_out',name: '其他', fullName: '其他 · 雜項部', emoji: '📂', color: '#888888', desc: '醫療、教育、人情禮金、稅務、其他' },
+];
+
+// ============ 工具 ============
+const fmt = (n) => new Intl.NumberFormat('zh-TW').format(Math.round(n));
+const fmtK = (n) => {
+  const v = Math.round(n);
+  if (Math.abs(v) >= 10000) return (v / 10000).toFixed(1) + '萬';
+  if (Math.abs(v) >= 1000) return (v / 1000).toFixed(0) + 'k';
+  return String(v);
+};
+const today = () => new Date().toISOString().split('T')[0];
+const ym = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+const isOnline = () => navigator.onLine !== false;
+const findDept = (id) => DEPARTMENTS.find(d => d.id === id) || DEPARTMENTS[5];
+const findIncome = (id) => INCOME_CATS.find(c => c.id === id) || INCOME_CATS[4];
+
+// ====== 結算週期計算 ======
+// 慣例：用「期末月」當 periodKey。例：cycleDay=25 → 4/25-5/24 的 key 是 '2026-05'
+function getCurrentPeriod(cycleDay) {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth() + 1, d = now.getDate();
+  if (cycleDay === 1 || d < cycleDay) {
+    return `${y}-${String(m).padStart(2, '0')}`;
+  } else {
+    const next = new Date(y, m, 1);
+    return ym(next);
+  }
+}
+function getPeriodRange(periodKey, cycleDay) {
+  const [y, m] = periodKey.split('-').map(Number);
+  if (cycleDay === 1) {
+    return { start: new Date(y, m - 1, 1, 0, 0, 0), end: new Date(y, m, 0, 23, 59, 59) };
+  }
+  return { start: new Date(y, m - 2, cycleDay, 0, 0, 0), end: new Date(y, m - 1, cycleDay - 1, 23, 59, 59) };
+}
+function getPeriodLabel(periodKey, cycleDay) {
+  const [y, m] = periodKey.split('-').map(Number);
+  if (cycleDay === 1) return `${y} 年 ${m} 月`;
+  const { start, end } = getPeriodRange(periodKey, cycleDay);
+  return `${y}年${m}月期 · ${start.getMonth() + 1}/${start.getDate()}–${end.getMonth() + 1}/${end.getDate()}`;
+}
+function isInPeriod(tx, periodKey, cycleDay) {
+  if (!tx.date) return false;
+  const { start, end } = getPeriodRange(periodKey, cycleDay);
+  const td = new Date(tx.date);
+  return td >= start && td <= end;
+}
+function shiftPeriod(periodKey, delta) {
+  const [y, m] = periodKey.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return ym(d);
+}
+
+// ============ API ============
+const callApi = async (url, action, payload = {}) => {
+  if (!url) throw new Error('尚未設定 API 網址');
+  const formData = new FormData();
+  formData.append('payload', JSON.stringify({ action, ...payload }));
+  const res = await fetch(url, { method: 'POST', body: formData, redirect: 'follow' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || '未知錯誤');
+  return json.data;
+};
+const api = (action, payload = {}) => callApi(localStorage.getItem(STORAGE_API_URL), action, payload);
+
+// ============ 離線佇列 ============
+const queueOp = (op) => {
+  try {
+    const q = JSON.parse(localStorage.getItem(STORAGE_QUEUE) || '[]');
+    q.push({ ...op, ts: Date.now() });
+    localStorage.setItem(STORAGE_QUEUE, JSON.stringify(q));
+  } catch {}
+};
+const getQueue = () => { try { return JSON.parse(localStorage.getItem(STORAGE_QUEUE) || '[]'); } catch { return []; } };
+const setQueue = (q) => localStorage.setItem(STORAGE_QUEUE, JSON.stringify(q));
+const flushQueue = async () => {
+  const q = getQueue();
+  if (q.length === 0) return { synced: 0 };
+  const remaining = []; let synced = 0;
+  for (const op of q) {
+    try { await api(op.action, op.payload); synced++; } catch (e) { remaining.push(op); }
+  }
+  setQueue(remaining);
+  return { synced, failed: remaining.length };
+};
+
+// ============ Service Worker ============
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  });
+}
+
+// ============ 設定畫面 ============
+function SetupScreen({ onSaved }) {
+  const [url, setUrl] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [error, setError] = useState('');
+  const serif = { fontFamily: '"Noto Serif TC", serif' };
+  const test = async () => {
+    setError(''); setTesting(true);
+    try {
+      const u = url.trim();
+      if (!u.startsWith('https://script.google.com/')) throw new Error('網址格式不正確');
+      await callApi(u, 'load');
+      localStorage.setItem(STORAGE_API_URL, u);
+      onSaved(u);
+    } catch (e) {
+      const msg = String(e.message || e);
+      if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+        setError('連線失敗。最常見原因：部署存取權必須是「所有人 Anyone」。');
+      } else setError(msg);
+    } finally { setTesting(false); }
+  };
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6" style={{ backgroundColor: '#F5F1EA' }}>
+      <div className="max-w-md w-full bg-white border border-stone-200 rounded-sm overflow-hidden">
+        <div className="px-6 py-5 border-b border-stone-200" style={{ backgroundColor: '#FAF7F2' }}>
+          <div className="flex items-center gap-2 mb-2">
+            <Briefcase cls="w-4 h-4" style={{ color: '#1F3A2E' }} />
+            <span className="text-[10px] tracking-[0.3em] text-stone-500 uppercase">Setup Wizard</span>
+          </div>
+          <h1 className="text-xl font-bold" style={{ ...serif, color: '#1F3A2E' }}>歡迎來到 Me, Inc.</h1>
+          <p className="text-xs text-stone-500 mt-1" style={serif}>連結你的 Google Sheet 後台</p>
+        </div>
+        <div className="p-6 space-y-4">
+          <ol className="text-xs text-stone-600 space-y-2 list-decimal pl-4" style={serif}>
+            <li>打開 <a href="https://sheets.new" target="_blank" rel="noreferrer" className="underline font-medium" style={{ color: '#1F3A2E' }}>sheets.new</a> 建立新試算表</li>
+            <li>擴充功能 → Apps Script → 貼上 <code>google-apps-script.gs</code></li>
+            <li>部署 → 網頁應用程式 → 存取權「<strong className="text-red-700">所有人 Anyone</strong>」</li>
+            <li>複製網址貼到下方</li>
+          </ol>
+          <input type="text" value={url} onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://script.google.com/macros/s/.../exec"
+            className="w-full px-3 py-2.5 border border-stone-300 rounded-sm text-xs font-mono focus:outline-none focus:border-stone-500" />
+          {error && <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-sm p-3" style={serif}>{error}</div>}
+          <button onClick={test} disabled={testing || !url.trim()}
+            className="w-full px-5 py-3 text-white rounded-sm hover:opacity-90 disabled:opacity-50"
+            style={{ backgroundColor: '#1F3A2E' }}>
+            {testing ? '測試連線中⋯' : '開始營運'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============ 年月選取器（修正後的切換）============
+function PeriodPicker({ value, onChange, onClose, cycleDay, serif }) {
+  const [y, m] = value.split('-').map(Number);
+  const [selectedYear, setSelectedYear] = useState(y);
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentPeriodKey = getCurrentPeriod(cycleDay);
+  const [curY, curM] = currentPeriodKey.split('-').map(Number);
+
+  const pick = (mm) => {
+    onChange(`${selectedYear}-${String(mm).padStart(2, '0')}`);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center fade-in" onClick={onClose}>
+      <div className="bg-white w-full max-w-md rounded-t-2xl slide-up" onClick={(e) => e.stopPropagation()}
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="w-12 h-1 bg-stone-300 rounded-full mx-auto mt-3 mb-2" />
+
+        {/* 年份切換 */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-stone-200">
+          <button onClick={() => setSelectedYear(selectedYear - 1)}
+            className="p-3 -m-2 hover:bg-stone-100 rounded-sm">
+            <ChevronLeft cls="w-5 h-5 text-stone-600" />
+          </button>
+          <div className="text-lg font-bold tabular-nums" style={{ ...serif, color: '#1F3A2E' }}>
+            {selectedYear} 年
+          </div>
+          <button onClick={() => setSelectedYear(selectedYear + 1)}
+            disabled={selectedYear >= currentYear + 5}
+            className="p-3 -m-2 hover:bg-stone-100 rounded-sm disabled:opacity-30">
+            <ChevronRight cls="w-5 h-5 text-stone-600" />
+          </button>
+        </div>
+
+        {/* 月份方格 */}
+        <div className="p-4 grid grid-cols-3 gap-2">
+          {Array.from({ length: 12 }, (_, i) => i + 1).map(mm => {
+            const isSelected = selectedYear === y && mm === m;
+            const isCurrent = selectedYear === curY && mm === curM;
+            const isFuture = selectedYear > curY || (selectedYear === curY && mm > curM);
+            return (
+              <button key={mm} onClick={() => pick(mm)} disabled={isFuture}
+                className={`py-4 rounded-sm text-sm font-medium transition-colors relative ${
+                  isSelected ? 'text-white' :
+                  isFuture ? 'opacity-30 cursor-not-allowed text-stone-400' :
+                  'hover:bg-stone-100 text-stone-700 border border-stone-200'
+                }`}
+                style={{
+                  ...serif,
+                  backgroundColor: isSelected ? '#1F3A2E' : 'transparent',
+                  borderColor: isSelected ? '#1F3A2E' : (isCurrent ? '#A87B3D' : undefined),
+                  borderWidth: isCurrent && !isSelected ? '2px' : '1px',
+                }}>
+                {mm} 月
+                {isCurrent && !isSelected && (
+                  <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#A87B3D' }} />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="px-5 py-3 border-t border-stone-200 flex gap-2">
+          <button onClick={() => { onChange(currentPeriodKey); onClose(); }}
+            className="flex-1 py-2.5 text-sm border border-stone-300 rounded-sm hover:bg-stone-50">
+            回到本期
+          </button>
+          <button onClick={onClose} className="flex-1 py-2.5 text-sm text-stone-600 hover:bg-stone-100 rounded-sm">
+            關閉
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============ 圖表元件 ============
+function AssetTrendChart({ history, serif, mono }) {
+  if (history.length < 2) return null;
+  const W = 320, H = 160, PL = 38, PR = 12, PT = 16, PB = 28;
+  const values = history.map(h => h.endingCash);
+  let max = Math.max(...values), min = Math.min(...values);
+  if (max === min) { max += 1000; min -= 1000; }
+  const range = max - min;
+  // 加 5% padding
+  max += range * 0.1; min -= range * 0.1;
+  const newRange = max - min;
+  const sx = (i) => PL + (i / (history.length - 1)) * (W - PL - PR);
+  const sy = (v) => PT + (1 - (v - min) / newRange) * (H - PT - PB);
+
+  const points = history.map((h, i) => ({ x: sx(i), y: sy(h.endingCash), val: h.endingCash, label: h.period }));
+  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+  const areaPath = `${path} L ${points[points.length - 1].x.toFixed(1)} ${H - PB} L ${PL} ${H - PB} Z`;
+
+  const first = values[0], last = values[values.length - 1];
+  const change = last - first;
+  const pct = first !== 0 ? (change / Math.abs(first)) * 100 : 0;
+  const trendUp = change >= 0;
+
+  // 找最大跌幅月份（與前月相比）
+  let biggestDrop = null;
+  for (let i = 1; i < history.length; i++) {
+    const delta = history[i].endingCash - history[i - 1].endingCash;
+    if (delta < 0 && (!biggestDrop || delta < biggestDrop.delta)) {
+      biggestDrop = { index: i, delta, period: history[i].period };
+    }
+  }
+
+  return (
+    <section className="bg-white border border-stone-200 rounded-sm overflow-hidden">
+      <div className="px-5 py-3 border-b border-stone-100 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <ChartLine cls="w-3.5 h-3.5" style={{ color: '#1F3A2E' }} />
+          <span className="text-[11px] tracking-[0.2em] uppercase font-medium" style={{ color: '#7A5A2C' }}>資產走勢</span>
+        </div>
+        <div className="flex items-center gap-1.5 text-xs">
+          <span className={trendUp ? 'text-green-700' : 'text-red-700'} style={mono}>
+            {trendUp ? '↑' : '↓'} {Math.abs(pct).toFixed(1)}%
+          </span>
+          <span className="text-stone-400" style={serif}>近 {history.length} 期</span>
+        </div>
+      </div>
+      <div className="px-3 py-4">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" preserveAspectRatio="xMidYMid meet">
+          {/* Y 軸刻度 */}
+          {[0, 0.5, 1].map(t => {
+            const v = min + (1 - t) * newRange;
+            const yy = PT + t * (H - PT - PB);
+            return (
+              <g key={t}>
+                <line x1={PL} y1={yy} x2={W - PR} y2={yy} stroke="#E7E2D6" strokeWidth="0.5" strokeDasharray="2,2" />
+                <text x={PL - 4} y={yy + 3} textAnchor="end" fontSize="9" fill="#A8A29E" fontFamily="JetBrains Mono">
+                  {fmtK(v)}
+                </text>
+              </g>
+            );
+          })}
+          {/* X 軸標籤（隔點顯示） */}
+          {points.map((p, i) => {
+            const showLabel = history.length <= 6 || i % Math.ceil(history.length / 6) === 0 || i === history.length - 1;
+            if (!showLabel) return null;
+            const [py, pm] = p.label.split('-');
+            return (
+              <text key={i} x={p.x} y={H - 10} textAnchor="middle" fontSize="9" fill="#A8A29E" fontFamily="JetBrains Mono">
+                {pm}/{py.slice(2)}
+              </text>
+            );
+          })}
+          {/* 區域填充 */}
+          <path d={areaPath} fill="#1F3A2E" fillOpacity="0.08" />
+          {/* 線條 */}
+          <path d={path} fill="none" stroke="#1F3A2E" strokeWidth="2" />
+          {/* 點 */}
+          {points.map((p, i) => {
+            const isLast = i === points.length - 1;
+            const isDropPoint = biggestDrop && biggestDrop.index === i;
+            return (
+              <g key={i}>
+                <circle cx={p.x} cy={p.y} r={isLast ? 4 : isDropPoint ? 3.5 : 2.5}
+                  fill={isDropPoint ? '#A0421C' : '#1F3A2E'} stroke="#FFF" strokeWidth="1.5" />
+                {isLast && (
+                  <text x={p.x} y={p.y - 8} textAnchor="middle" fontSize="10" fontWeight="bold" fill="#1F3A2E" fontFamily="JetBrains Mono">
+                    ${fmtK(p.val)}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+      <div className="px-5 py-3 border-t border-stone-100 grid grid-cols-2 gap-3 text-[11px]" style={serif}>
+        <div>
+          <span className="text-stone-400">期間變動</span>
+          <div className={`font-semibold ${trendUp ? 'text-green-700' : 'text-red-700'}`} style={mono}>
+            {trendUp ? '+' : '−'}${fmt(Math.abs(change))}
+          </div>
+        </div>
+        {biggestDrop ? (
+          <div>
+            <span className="text-stone-400">最大單期跌幅</span>
+            <div className="font-semibold text-red-700" style={mono}>
+              {biggestDrop.period.slice(5)} 月 · −${fmt(Math.abs(biggestDrop.delta))}
+            </div>
+          </div>
+        ) : (
+          <div>
+            <span className="text-stone-400">最大單期跌幅</span>
+            <div className="text-stone-500" style={serif}>無下跌週期 🎉</div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function PLBarChart({ history, serif, mono }) {
+  if (history.length < 2) return null;
+  const W = 320, H = 160, PL = 32, PR = 12, PT = 16, PB = 28;
+  const nets = history.map(h => h.netProfit);
+  const absMax = Math.max(...nets.map(Math.abs), 100);
+  const yMid = PT + (H - PT - PB) / 2;
+  const barW = Math.min(24, ((W - PL - PR) / history.length) * 0.6);
+  const groupW = (W - PL - PR) / history.length;
+
+  return (
+    <section className="bg-white border border-stone-200 rounded-sm overflow-hidden">
+      <div className="px-5 py-3 border-b border-stone-100 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Briefcase cls="w-3.5 h-3.5" style={{ color: '#1F3A2E' }} />
+          <span className="text-[11px] tracking-[0.2em] uppercase font-medium" style={{ color: '#7A5A2C' }}>月度損益</span>
+        </div>
+        <span className="text-[10px] text-stone-400" style={serif}>淨利 = 收入 − 支出</span>
+      </div>
+      <div className="px-3 py-4">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" preserveAspectRatio="xMidYMid meet">
+          <line x1={PL} y1={yMid} x2={W - PR} y2={yMid} stroke="#E7E2D6" strokeWidth="1" />
+          <text x={PL - 4} y={yMid + 3} textAnchor="end" fontSize="9" fill="#A8A29E" fontFamily="JetBrains Mono">0</text>
+          <text x={PL - 4} y={PT + 8} textAnchor="end" fontSize="9" fill="#A8A29E" fontFamily="JetBrains Mono">+{fmtK(absMax)}</text>
+          <text x={PL - 4} y={H - PB + 3} textAnchor="end" fontSize="9" fill="#A8A29E" fontFamily="JetBrains Mono">−{fmtK(absMax)}</text>
+          {history.map((h, i) => {
+            const cx = PL + groupW * (i + 0.5);
+            const bh = (Math.abs(h.netProfit) / absMax) * ((H - PT - PB) / 2);
+            const isPos = h.netProfit >= 0;
+            const [py, pm] = h.period.split('-');
+            return (
+              <g key={i}>
+                <rect x={cx - barW / 2} y={isPos ? yMid - bh : yMid}
+                  width={barW} height={Math.max(bh, 1)}
+                  fill={isPos ? '#1F3A2E' : '#A0421C'} rx="1" opacity="0.85" />
+                <text x={cx} y={H - 10} textAnchor="middle" fontSize="9" fill="#A8A29E" fontFamily="JetBrains Mono">
+                  {pm}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    </section>
+  );
+}
+
+// ============ 主元件 ============
+function App() {
+  const [apiUrl, setApiUrl] = useState(() => localStorage.getItem(STORAGE_API_URL));
+  const [transactions, setTransactions] = useState([]);
+  const [openingBalance, setOpeningBalance] = useState(0);
+  const [cycleDay, setCycleDay] = useState(() => Number(localStorage.getItem(STORAGE_CYCLE)) || 1);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [online, setOnline] = useState(isOnline());
+  const [toast, setToast] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
+  const [period, setPeriod] = useState(() => getCurrentPeriod(Number(localStorage.getItem(STORAGE_CYCLE)) || 1));
+  const [filter, setFilter] = useState('all');
+  const [editingTx, setEditingTx] = useState(null);
+
+  const serif = { fontFamily: '"Noto Serif TC", serif' };
+  const mono = { fontFamily: '"JetBrains Mono", monospace' };
+
+  // 變更 cycleDay 時，重設 period 為當前
+  useEffect(() => {
+    localStorage.setItem(STORAGE_CYCLE, String(cycleDay));
+    setPeriod(getCurrentPeriod(cycleDay));
+  }, [cycleDay]);
+
+  useEffect(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem(STORAGE_CACHE) || 'null');
+      if (cached) {
+        setTransactions(cached.transactions || []);
+        setOpeningBalance(cached.openingBalance || 0);
+      }
+    } catch {}
+  }, []);
+
+  const showToast = useCallback((msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 2500);
+  }, []);
+
+  const reload = useCallback(async () => {
+    if (!apiUrl) return;
+    setSyncing(true);
+    try {
+      const q = getQueue();
+      if (q.length > 0 && online) {
+        const r = await flushQueue();
+        if (r.synced > 0) showToast(`已同步 ${r.synced} 筆離線記錄`);
+      }
+      const data = await api('load');
+      setTransactions(data.transactions || []);
+      setOpeningBalance(data.openingBalance || 0);
+      localStorage.setItem(STORAGE_CACHE, JSON.stringify(data));
+    } catch (e) {
+      if (!online) showToast('離線中，顯示快取資料', 'info');
+      else showToast('載入失敗：' + e.message, 'error');
+    } finally { setSyncing(false); setLoading(false); }
+  }, [apiUrl, online, showToast]);
+
+  useEffect(() => { if (apiUrl) reload(); else setLoading(false); }, [apiUrl, reload]);
+
+  useEffect(() => {
+    const goOn = () => { setOnline(true); reload(); };
+    const goOff = () => setOnline(false);
+    window.addEventListener('online', goOn);
+    window.addEventListener('offline', goOff);
+    return () => { window.removeEventListener('online', goOn); window.removeEventListener('offline', goOff); };
+  }, [reload]);
+
+  // ── 期間指標 ──
+  const periodTx = useMemo(() => transactions.filter(t => isInPeriod(t, period, cycleDay)), [transactions, period, cycleDay]);
+  const inc = periodTx.filter(t => t.type === 'inflow').reduce((s, t) => s + Number(t.amount || 0), 0);
+  const exp = periodTx.filter(t => t.type === 'outflow').reduce((s, t) => s + Number(t.amount || 0), 0);
+  const netProfit = inc - exp;
+  const margin = inc > 0 ? (netProfit / inc) * 100 : 0;
+
+  // 期初現金（自動：openingBalance + 此期間之前的所有交易淨額）
+  const periodStartCash = useMemo(() => {
+    const { start } = getPeriodRange(period, cycleDay);
+    const before = transactions.filter(t => new Date(t.date) < start);
+    const i = before.filter(t => t.type === 'inflow').reduce((s, t) => s + Number(t.amount || 0), 0);
+    const e = before.filter(t => t.type === 'outflow').reduce((s, t) => s + Number(t.amount || 0), 0);
+    return openingBalance + i - e;
+  }, [transactions, period, cycleDay, openingBalance]);
+  const periodEndCash = periodStartCash + netProfit;
+
+  // 部門統計
+  const deptStats = DEPARTMENTS.map(d => {
+    const txs = periodTx.filter(t => t.type === 'outflow' && t.category === d.id);
+    const total = txs.reduce((s, t) => s + Number(t.amount || 0), 0);
+    return { ...d, total, count: txs.length, pct: exp > 0 ? (total / exp) * 100 : 0 };
+  }).sort((a, b) => b.total - a.total);
+
+  // 燃燒率（近 3 期）+ 跑道
+  const burnRate = useMemo(() => {
+    const months = [];
+    for (let i = 1; i <= 3; i++) {
+      const k = shiftPeriod(getCurrentPeriod(cycleDay), -i);
+      const ptx = transactions.filter(t => isInPeriod(t, k, cycleDay));
+      const e = ptx.filter(t => t.type === 'outflow').reduce((s, t) => s + Number(t.amount || 0), 0);
+      if (e > 0) months.push(e);
+    }
+    return months.length > 0 ? months.reduce((s, x) => s + x, 0) / months.length : 0;
+  }, [transactions, cycleDay]);
+
+  const totalIn = transactions.filter(t => t.type === 'inflow').reduce((s, t) => s + Number(t.amount || 0), 0);
+  const totalOut = transactions.filter(t => t.type === 'outflow').reduce((s, t) => s + Number(t.amount || 0), 0);
+  const currentBalance = openingBalance + totalIn - totalOut;
+  const runway = burnRate > 0 ? currentBalance / burnRate : Infinity;
+
+  // 歷史資產走勢（近 12 期）
+  const history = useMemo(() => {
+    const out = [];
+    const curK = getCurrentPeriod(cycleDay);
+    for (let i = 11; i >= 0; i--) {
+      const k = shiftPeriod(curK, -i);
+      const { end } = getPeriodRange(k, cycleDay);
+      const upTo = transactions.filter(t => new Date(t.date) <= end);
+      const ii = upTo.filter(t => t.type === 'inflow').reduce((s, t) => s + Number(t.amount || 0), 0);
+      const ee = upTo.filter(t => t.type === 'outflow').reduce((s, t) => s + Number(t.amount || 0), 0);
+      const ptx = transactions.filter(t => isInPeriod(t, k, cycleDay));
+      const pi = ptx.filter(t => t.type === 'inflow').reduce((s, t) => s + Number(t.amount || 0), 0);
+      const pe = ptx.filter(t => t.type === 'outflow').reduce((s, t) => s + Number(t.amount || 0), 0);
+      out.push({ period: k, endingCash: openingBalance + ii - ee, netProfit: pi - pe });
+    }
+    // 過濾掉沒有任何活動且也是初始值的太早週期（保留至少有資料的週期）
+    const firstActive = out.findIndex(h => h.netProfit !== 0 || h.endingCash !== openingBalance);
+    if (firstActive > 0) return out.slice(Math.max(0, firstActive - 1));
+    return out;
+  }, [transactions, cycleDay, openingBalance]);
+
+  // 篩選
+  const filteredTx = periodTx.filter(t => {
+    if (filter === 'all') return true;
+    if (filter === 'income') return t.type === 'inflow';
+    if (filter === 'expense') return t.type === 'outflow';
+    return t.type === 'outflow' && t.category === filter;
+  }).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  // ── 動作 ──
+  const handleSave = async (data) => {
+    const isEdit = !!editingTx;
+    const tx = isEdit ? { ...editingTx, ...data } : {
+      id: Date.now().toString(), ...data,
+      received: true, paymentTerm: 0,
+      createdAt: new Date().toISOString()
+    };
+    setSyncing(true);
+    setTransactions(prev => isEdit ? prev.map(t => t.id === tx.id ? tx : t) : [tx, ...prev]);
+    setShowForm(false); setEditingTx(null);
+    try {
+      if (online) {
+        if (isEdit) await api('updateTxn', { id: tx.id, fields: { type: tx.type, category: tx.category, date: tx.date, amount: tx.amount, client: tx.client, description: tx.description } });
+        else await api('addTxn', { txn: tx });
+        showToast('已同步到 Google Sheet');
+      } else {
+        queueOp({ action: isEdit ? 'updateTxn' : 'addTxn', payload: isEdit ? { id: tx.id, fields: tx } : { txn: tx } });
+        showToast('離線儲存，連線後自動同步', 'info');
+      }
+    } catch (e) {
+      queueOp({ action: isEdit ? 'updateTxn' : 'addTxn', payload: isEdit ? { id: tx.id, fields: tx } : { txn: tx } });
+      showToast('暫存到佇列，稍後重試', 'info');
+    } finally { setSyncing(false); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('確定刪除？')) return;
+    setSyncing(true);
+    setTransactions(prev => prev.filter(t => t.id !== id));
+    try {
+      if (online) { await api('deleteTxn', { id }); showToast('已刪除'); }
+      else { queueOp({ action: 'deleteTxn', payload: { id } }); showToast('離線刪除，連線後同步', 'info'); }
+    } catch (e) {
+      queueOp({ action: 'deleteTxn', payload: { id } });
+    } finally { setSyncing(false); }
+  };
+
+  if (!apiUrl) return <SetupScreen onSaved={setApiUrl} />;
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#F5F1EA' }}>
+      <div className="text-stone-500 flex items-center gap-2" style={serif}>
+        <Refresh cls="w-4 h-4 animate-spin" />載入中⋯
+      </div>
+    </div>
+  );
+
+  const periodLabel = getPeriodLabel(period, cycleDay);
+
+  return (
+    <div className="min-h-screen pb-24" style={{ backgroundColor: '#F5F1EA', fontFamily: 'system-ui, sans-serif' }}>
+      {toast && (
+        <div className="fixed top-4 left-4 right-4 z-50 px-4 py-3 rounded-sm shadow-lg text-sm text-center fade-in"
+          style={{
+            backgroundColor: toast.type === 'error' ? '#FEE2E2' : toast.type === 'info' ? '#FEF3C7' : '#E8F0EA',
+            color: toast.type === 'error' ? '#991B1B' : toast.type === 'info' ? '#92400E' : '#1F3A2E',
+            border: `1px solid ${toast.type === 'error' ? '#FCA5A5' : toast.type === 'info' ? '#FCD34D' : '#A8D5B5'}`,
+            ...serif
+          }}>{toast.msg}</div>
+      )}
+
+      <header className="sticky top-0 z-30 border-b border-stone-300/60" style={{ backgroundColor: '#FAF7F2' }}>
+        <div className="px-4 pt-4 pb-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Briefcase cls="w-4 h-4" style={{ color: '#1F3A2E' }} />
+              <span className="text-[10px] tracking-[0.3em] text-stone-500 uppercase font-medium">Me, Inc.</span>
+              {syncing && <Refresh cls="w-3 h-3 animate-spin text-stone-400" />}
+              {!online && <CloudOff cls="w-3.5 h-3.5 text-amber-600" />}
+            </div>
+            <div className="flex items-center gap-1">
+              <button onClick={reload} className="p-2.5 hover:bg-stone-100 rounded-sm" title="同步">
+                <Refresh cls="w-4 h-4 text-stone-500" />
+              </button>
+              <button onClick={() => setShowSettings(true)} className="p-2.5 hover:bg-stone-100 rounded-sm">
+                <Cog cls="w-4 h-4 text-stone-500" />
+              </button>
+            </div>
+          </div>
+          <div className="flex items-end justify-between">
+            <div>
+              <h1 className="text-xl font-bold tracking-tight" style={{ ...serif, color: '#1F3A2E' }}>個人營運帳本</h1>
+              <p className="text-[11px] text-stone-500" style={serif}>你的人生，就是一間公司</p>
+            </div>
+            {/* 大型可點期間切換按鈕 */}
+            <button onClick={() => setShowPicker(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-white border border-stone-300 rounded-sm hover:bg-stone-50 active:scale-95 transition-transform">
+              <Calendar cls="w-3.5 h-3.5 text-stone-500" />
+              <span className="text-xs font-semibold tabular-nums" style={{ ...serif, color: '#1F3A2E' }}>{periodLabel}</span>
+              <ChevronDown cls="w-3 h-3 text-stone-400" />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="px-4 py-4 space-y-4 max-w-2xl mx-auto">
+
+        {/* 本期損益 */}
+        <section className="bg-white border border-stone-200 rounded-sm overflow-hidden">
+          <div className="px-5 py-3 border-b border-stone-100" style={{ backgroundColor: '#FAF7F2' }}>
+            <div className="flex items-baseline justify-between">
+              <span className="text-[10px] tracking-[0.25em] uppercase" style={{ color: '#7A5A2C' }}>Period P&L</span>
+              <span className="text-[10px] text-stone-400" style={serif}>{periodLabel}</span>
+            </div>
+          </div>
+          <div className="px-5 py-4 space-y-3">
+            <div>
+              <div className="text-xs text-stone-500 tracking-wider mb-1" style={serif}>本期淨利</div>
+              <div className="flex items-baseline gap-2 flex-wrap">
+                <span className="text-3xl font-bold" style={{ ...mono, color: netProfit >= 0 ? '#1F3A2E' : '#A0421C' }}>
+                  {netProfit >= 0 ? '+' : '−'}${fmt(Math.abs(netProfit))}
+                </span>
+                {inc > 0 && (
+                  <span className="text-xs font-medium px-2 py-0.5 rounded-sm" style={{
+                    backgroundColor: margin >= 20 ? '#E8F0EA' : margin >= 0 ? '#FFF3DC' : '#FEE2E2',
+                    color: margin >= 20 ? '#1F3A2E' : margin >= 0 ? '#7A5A2C' : '#991B1B'
+                  }}>
+                    淨利率 {margin.toFixed(1)}%
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-stone-100">
+              <div>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <TrendUp cls="w-3 h-3" style={{ color: '#1F3A2E' }} />
+                  <span className="text-[10px] tracking-wider text-stone-500">營運收入</span>
+                </div>
+                <div className="text-lg font-semibold" style={{ ...mono, color: '#1F3A2E' }}>${fmt(inc)}</div>
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <TrendDown cls="w-3 h-3" style={{ color: '#A0421C' }} />
+                  <span className="text-[10px] tracking-wider text-stone-500">營運支出</span>
+                </div>
+                <div className="text-lg font-semibold" style={{ ...mono, color: '#A0421C' }}>${fmt(exp)}</div>
+              </div>
+            </div>
+            {/* 期初/期末（自動延續） */}
+            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-stone-100">
+              <div>
+                <span className="text-[10px] tracking-wider text-stone-500">期初現金</span>
+                <div className="text-sm font-semibold" style={{ ...mono, color: '#7A5A2C' }}>${fmt(periodStartCash)}</div>
+                <div className="text-[10px] text-stone-400" style={serif}>{cycleDay === 1 ? '月初自動延續' : `自上期 ${cycleDay-1}日 延續`}</div>
+              </div>
+              <div>
+                <span className="text-[10px] tracking-wider text-stone-500">期末現金</span>
+                <div className="text-sm font-semibold" style={{ ...mono, color: periodEndCash >= 0 ? '#1F3A2E' : '#A0421C' }}>${fmt(periodEndCash)}</div>
+                <div className="text-[10px] text-stone-400" style={serif}>= 期初 + 淨利</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* 部門支出 */}
+        {exp > 0 && (
+          <section className="bg-white border border-stone-200 rounded-sm overflow-hidden">
+            <div className="px-5 py-3 border-b border-stone-100 flex items-center justify-between">
+              <span className="text-[11px] tracking-[0.2em] uppercase font-medium" style={{ color: '#7A5A2C' }}>各部門支出佔比</span>
+              <span className="text-[10px] text-stone-400" style={serif}>by Department</span>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              {deptStats.filter(d => d.total > 0).map(d => (
+                <button key={d.id} onClick={() => setFilter(d.id)} className="w-full text-left hover:bg-stone-50 -mx-2 px-2 py-1 rounded-sm transition-colors">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">{d.emoji}</span>
+                      <span className="text-sm font-medium text-stone-700">{d.name}</span>
+                      <span className="text-[10px] text-stone-400">{d.count} 筆</span>
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-[11px] text-stone-500 tabular-nums">{d.pct.toFixed(0)}%</span>
+                      <span className="text-sm font-semibold" style={mono}>${fmt(d.total)}</span>
+                    </div>
+                  </div>
+                  <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full transition-all" style={{ width: `${d.pct}%`, backgroundColor: d.color }} />
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* 圖表區 */}
+        {history.length >= 2 && (
+          <>
+            <AssetTrendChart history={history} serif={serif} mono={mono} />
+            <PLBarChart history={history} serif={serif} mono={mono} />
+          </>
+        )}
+
+        {/* 公司指標 */}
+        <section className="grid grid-cols-2 gap-3">
+          <div className="bg-white border border-stone-200 rounded-sm p-4">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Flame cls="w-3.5 h-3.5" style={{ color: '#A0421C' }} />
+              <span className="text-[10px] tracking-wider text-stone-500">月燃燒率</span>
+            </div>
+            <div className="text-base font-semibold" style={{ ...mono, color: '#1F3A2E' }}>${fmt(burnRate)}</div>
+            <div className="text-[10px] text-stone-400 mt-1" style={serif}>近 3 期均支</div>
+          </div>
+          <div className="bg-white border border-stone-200 rounded-sm p-4">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Briefcase cls="w-3.5 h-3.5" style={{ color: '#1F3A2E' }} />
+              <span className="text-[10px] tracking-wider text-stone-500">公司跑道</span>
+            </div>
+            <div className="text-base font-semibold" style={{ ...mono, color: runway >= 6 ? '#1F3A2E' : runway >= 3 ? '#A87B3D' : '#A0421C' }}>
+              {runway === Infinity ? '∞' : runway.toFixed(1) + ' 期'}
+            </div>
+            <div className="text-[10px] text-stone-400 mt-1" style={serif}>沒收入還能撐多久</div>
+          </div>
+        </section>
+
+        {/* 篩選列 */}
+        <section className="overflow-x-auto -mx-4 px-4">
+          <div className="flex gap-1.5 pb-1 min-w-min">
+            {[
+              { k: 'all', label: '全部' },
+              { k: 'income', label: '收入' },
+              { k: 'expense', label: '支出' },
+              ...DEPARTMENTS.map(d => ({ k: d.id, label: d.emoji + ' ' + d.name }))
+            ].map(f => (
+              <button key={f.k} onClick={() => setFilter(f.k)}
+                className={`px-3 py-1.5 text-xs rounded-sm whitespace-nowrap transition-colors ${filter === f.k ? 'text-white' : 'bg-white border border-stone-200 text-stone-600'}`}
+                style={filter === f.k ? { backgroundColor: '#1F3A2E' } : {}}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {/* 交易明細 */}
+        <section className="bg-white border border-stone-200 rounded-sm overflow-hidden">
+          <div className="px-5 py-3 border-b border-stone-100 flex items-center justify-between">
+            <div className="text-[11px] tracking-[0.2em] uppercase font-medium" style={{ color: '#7A5A2C' }}>交易明細</div>
+            <div className="text-[10px] text-stone-400" style={serif}>{filteredTx.length} 筆</div>
+          </div>
+          {filteredTx.length === 0 ? (
+            <div className="px-5 py-12 text-center text-stone-400 text-sm" style={serif}>本期此類別暫無記錄</div>
+          ) : (
+            <div>
+              {filteredTx.map(tx => {
+                const isInc = tx.type === 'inflow';
+                const cat = isInc ? findIncome(tx.category) : findDept(tx.category);
+                return (
+                  <button key={tx.id} onClick={() => { setEditingTx(tx); setShowForm(true); }}
+                    className="w-full px-4 py-3 border-b border-stone-100 last:border-0 active:bg-stone-50 text-left flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-sm flex items-center justify-center flex-shrink-0 text-lg"
+                      style={{ backgroundColor: isInc ? '#E8F0EA' : `${cat.color}22` }}>
+                      {cat.emoji}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-stone-700 truncate">{tx.client || cat.name}</div>
+                      <div className="text-[11px] text-stone-400 mt-0.5 truncate" style={serif}>
+                        {cat.name} · {tx.date}{tx.description && ` · ${tx.description}`}
+                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className="text-sm font-semibold" style={{ ...mono, color: isInc ? '#1F3A2E' : '#A0421C' }}>
+                        {isInc ? '+' : '−'}${fmt(tx.amount)}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <footer className="text-[10px] text-stone-400 text-center py-4" style={serif}>
+          資料儲存於您的 Google Sheet · {online ? '線上' : '離線'} · Me, Inc.
+        </footer>
+      </main>
+
+      <button onClick={() => { setEditingTx(null); setShowForm(true); }}
+        className="fixed bottom-6 right-5 w-14 h-14 rounded-full text-white shadow-lg active:scale-95 transition-transform z-40 flex items-center justify-center"
+        style={{ backgroundColor: '#1F3A2E', boxShadow: '0 8px 24px rgba(31,58,46,.35)' }}>
+        <Plus cls="w-6 h-6" sw={2.5} />
+      </button>
+
+      {showPicker && (
+        <PeriodPicker value={period} onChange={setPeriod} onClose={() => setShowPicker(false)} cycleDay={cycleDay} serif={serif} />
+      )}
+
+      {showForm && (
+        <EntryForm
+          initial={editingTx}
+          onClose={() => { setShowForm(false); setEditingTx(null); }}
+          onSave={handleSave}
+          onDelete={editingTx ? () => { handleDelete(editingTx.id); setShowForm(false); setEditingTx(null); } : null}
+          serif={serif} mono={mono}
+        />
+      )}
+
+      {showSettings && (
+        <SettingsModal
+          apiUrl={apiUrl}
+          openingBalance={openingBalance}
+          currentBalance={currentBalance}
+          cycleDay={cycleDay}
+          onChangeCycle={setCycleDay}
+          onClose={() => setShowSettings(false)}
+          onReset={() => { localStorage.removeItem(STORAGE_API_URL); setApiUrl(null); }}
+          onSaveOpening={async (val) => {
+            const prev = openingBalance;
+            setOpeningBalance(val);
+            try { await api('setOpening', { value: val }); showToast('期初餘額已更新'); }
+            catch (e) { setOpeningBalance(prev); showToast('儲存失敗：' + e.message, 'error'); }
+          }}
+          serif={serif} mono={mono}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============ 表單 ============
+function EntryForm({ initial, onClose, onSave, onDelete, serif, mono }) {
+  const [type, setType] = useState(initial?.type || 'outflow');
+  const [category, setCategory] = useState(initial?.category || (initial?.type === 'inflow' ? 'salary' : 'food'));
+  const [date, setDate] = useState(initial?.date || today());
+  const [amount, setAmount] = useState(initial ? String(initial.amount) : '');
+  const [client, setClient] = useState(initial?.client || '');
+  const [description, setDescription] = useState(initial?.description || '');
+  const cats = type === 'inflow' ? INCOME_CATS : DEPARTMENTS;
+  const isEdit = !!initial;
+
+  const submit = () => {
+    if (!amount || isNaN(Number(amount))) { alert('請填寫金額'); return; }
+    onSave({ type, category, date, amount: parseFloat(amount), client, description });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center fade-in" onClick={onClose}>
+      <div className="bg-white w-full max-w-md rounded-t-2xl max-h-[92vh] overflow-y-auto slide-up" onClick={(e) => e.stopPropagation()}
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="w-12 h-1 bg-stone-300 rounded-full mx-auto mt-3 mb-2" />
+        <div className="flex items-center justify-between px-5 py-3 border-b border-stone-200">
+          <h3 className="text-base font-bold" style={{ ...serif, color: '#1F3A2E' }}>{isEdit ? '編輯記錄' : '新增記錄'}</h3>
+          <button onClick={onClose} className="p-2 -m-2 text-stone-400"><X cls="w-5 h-5" /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => { setType('outflow'); setCategory('food'); }}
+              className={`py-3 text-sm rounded-sm border transition-colors ${type === 'outflow' ? 'text-white' : 'border-stone-300 text-stone-600'}`}
+              style={type === 'outflow' ? { backgroundColor: '#A0421C', borderColor: '#A0421C' } : {}}>支出 (Expense)</button>
+            <button onClick={() => { setType('inflow'); setCategory('salary'); }}
+              className={`py-3 text-sm rounded-sm border transition-colors ${type === 'inflow' ? 'text-white' : 'border-stone-300 text-stone-600'}`}
+              style={type === 'inflow' ? { backgroundColor: '#1F3A2E', borderColor: '#1F3A2E' } : {}}>收入 (Revenue)</button>
+          </div>
+          <div>
+            <label className="text-[10px] tracking-wider text-stone-500 mb-2 block">{type === 'inflow' ? '收入來源' : '部門 (Department)'}</label>
+            <div className="grid grid-cols-3 gap-2">
+              {cats.map(c => (
+                <button key={c.id} onClick={() => setCategory(c.id)}
+                  className={`py-3 px-2 rounded-sm border transition-colors ${category === c.id ? 'text-white border-stone-700' : 'border-stone-200 bg-stone-50'}`}
+                  style={category === c.id ? { backgroundColor: type === 'inflow' ? '#1F3A2E' : (c.color || '#1F3A2E'), borderColor: 'transparent' } : {}}>
+                  <div className="text-xl mb-1">{c.emoji}</div>
+                  <div className="text-[11px] font-medium">{c.name}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] tracking-wider text-stone-500 mb-2 block">金額 (NT$)</label>
+            <input type="number" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0"
+              className="w-full px-4 py-3 border border-stone-300 rounded-sm text-2xl font-semibold focus:outline-none focus:border-stone-500"
+              style={mono} autoFocus={!isEdit} />
+          </div>
+          <div>
+            <label className="text-[10px] tracking-wider text-stone-500 mb-2 block">日期</label>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+              className="w-full px-3 py-2.5 border border-stone-300 rounded-sm text-sm focus:outline-none focus:border-stone-500" />
+          </div>
+          <div>
+            <label className="text-[10px] tracking-wider text-stone-500 mb-2 block">{type === 'inflow' ? '收入來源（公司/單位）' : '商家 / 對象'}（選填）</label>
+            <input type="text" value={client} onChange={(e) => setClient(e.target.value)}
+              placeholder={type === 'inflow' ? '例：典仕科技、自由接案' : '例：全家、Uber、IKEA'}
+              className="w-full px-3 py-2.5 border border-stone-300 rounded-sm text-sm focus:outline-none focus:border-stone-500" />
+          </div>
+          <div>
+            <label className="text-[10px] tracking-wider text-stone-500 mb-2 block">備註（選填）</label>
+            <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="例：午餐便當"
+              className="w-full px-3 py-2.5 border border-stone-300 rounded-sm text-sm focus:outline-none focus:border-stone-500" />
+          </div>
+        </div>
+        <div className="px-5 py-4 border-t border-stone-200 flex gap-2">
+          {onDelete && (
+            <button onClick={onDelete} className="px-4 py-3 text-sm text-red-600 hover:bg-red-50 rounded-sm"><Trash cls="w-4 h-4" /></button>
+          )}
+          <button onClick={onClose} className="flex-1 py-3 text-sm text-stone-600 hover:bg-stone-100 rounded-sm">取消</button>
+          <button onClick={submit} className="flex-1 py-3 text-sm text-white rounded-sm font-medium" style={{ backgroundColor: '#1F3A2E' }}>
+            {isEdit ? '儲存修改' : '記一筆'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============ 設定 ============
+function SettingsModal({ apiUrl, openingBalance, currentBalance, cycleDay, onChangeCycle, onClose, onReset, onSaveOpening, serif, mono }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(String(openingBalance));
+  const [tempCycle, setTempCycle] = useState(cycleDay);
+  const [cycleDirty, setCycleDirty] = useState(false);
+
+  // 範例：算出依新 cycleDay 的當期區間
+  const examplePeriod = useMemo(() => {
+    const k = getCurrentPeriod(tempCycle);
+    return getPeriodLabel(k, tempCycle);
+  }, [tempCycle]);
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center fade-in" onClick={onClose}>
+      <div className="bg-white w-full max-w-md rounded-t-2xl max-h-[92vh] overflow-y-auto slide-up" onClick={(e) => e.stopPropagation()}
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="w-12 h-1 bg-stone-300 rounded-full mx-auto mt-3 mb-2" />
+        <div className="flex items-center justify-between px-5 py-3 border-b border-stone-200">
+          <h3 className="text-base font-bold" style={{ ...serif, color: '#1F3A2E' }}>設定 · 經營後台</h3>
+          <button onClick={onClose} className="p-2 -m-2 text-stone-400"><X cls="w-5 h-5" /></button>
+        </div>
+        <div className="p-5 space-y-5">
+
+          {/* ★ 結算週期（新功能）*/}
+          <div className="p-4 rounded-sm border-2" style={{ borderColor: '#A87B3D', backgroundColor: '#FFFBF3' }}>
+            <div className="flex items-center gap-2 mb-2">
+              <Calendar cls="w-4 h-4" style={{ color: '#A87B3D' }} />
+              <span className="text-sm font-semibold" style={{ ...serif, color: '#7A5A2C' }}>結算週期</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-sm text-white" style={{ backgroundColor: '#A87B3D' }}>NEW</span>
+            </div>
+            <p className="text-[11px] leading-relaxed mb-3" style={{ ...serif, color: '#7A5A2C' }}>
+              選擇你的「公司結算日」。例如薪資 25 號發 → 設為 25，那 4/25~5/24 才是一個完整週期。<strong>上期期末會自動成為下期期初</strong>，永遠不需手動盤點。
+            </p>
+            <label className="text-[10px] tracking-wider mb-2 block" style={{ color: '#7A5A2C' }}>每月幾號為新週期起點</label>
+            <div className="flex items-center gap-2 mb-2">
+              <button onClick={() => { setTempCycle(Math.max(1, tempCycle - 1)); setCycleDirty(true); }}
+                className="w-10 h-10 bg-white border border-stone-300 rounded-sm hover:bg-stone-50 active:scale-95 transition-transform">
+                <ChevronLeft cls="w-4 h-4 mx-auto text-stone-600" />
+              </button>
+              <div className="flex-1 text-center py-2 bg-white border border-stone-300 rounded-sm">
+                <span className="text-2xl font-bold tabular-nums" style={{ ...mono, color: '#1F3A2E' }}>{tempCycle}</span>
+                <span className="text-xs text-stone-500 ml-1">號</span>
+              </div>
+              <button onClick={() => { setTempCycle(Math.min(28, tempCycle + 1)); setCycleDirty(true); }}
+                className="w-10 h-10 bg-white border border-stone-300 rounded-sm hover:bg-stone-50 active:scale-95 transition-transform">
+                <ChevronRight cls="w-4 h-4 mx-auto text-stone-600" />
+              </button>
+            </div>
+            <div className="text-[11px] mb-3" style={{ ...serif, color: '#7A5A2C' }}>
+              目前當期區間：<strong>{examplePeriod}</strong>
+            </div>
+            {cycleDirty && (
+              <button onClick={() => { onChangeCycle(tempCycle); setCycleDirty(false); }}
+                className="w-full py-2.5 text-sm text-white rounded-sm" style={{ backgroundColor: '#A87B3D' }}>
+                套用結算日 {tempCycle} 號
+              </button>
+            )}
+            <div className="text-[10px] text-stone-500 mt-2" style={serif}>
+              💡 限 1~28 號，避免月底長度不一造成問題
+            </div>
+          </div>
+
+          {/* 期初餘額 */}
+          <div>
+            <div className="text-[10px] tracking-wider text-stone-500 mb-2">期初餘額（公司開張資本）</div>
+            {editing ? (
+              <div className="flex gap-2">
+                <input type="number" inputMode="decimal" value={val} onChange={(e) => setVal(e.target.value)}
+                  className="flex-1 px-3 py-2.5 border border-stone-300 rounded-sm text-sm" style={mono} autoFocus />
+                <button onClick={() => { onSaveOpening(parseFloat(val) || 0); setEditing(false); }}
+                  className="px-4 text-sm text-white rounded-sm" style={{ backgroundColor: '#1F3A2E' }}>儲存</button>
+              </div>
+            ) : (
+              <button onClick={() => setEditing(true)} className="text-lg font-semibold hover:underline" style={{ ...mono, color: '#1F3A2E' }}>
+                ${fmt(openingBalance)} <span className="text-xs text-stone-400 ml-1">編輯</span>
+              </button>
+            )}
+            <div className="text-[10px] text-stone-400 mt-1" style={serif}>只在首次設定，之後系統自動延續</div>
+          </div>
+
+          {/* 目前公司現金 */}
+          <div>
+            <div className="text-[10px] tracking-wider text-stone-500 mb-2">目前公司現金</div>
+            <div className="text-lg font-semibold" style={{ ...mono, color: currentBalance >= 0 ? '#1F3A2E' : '#A0421C' }}>
+              ${fmt(currentBalance)}
+            </div>
+            <div className="text-[10px] text-stone-400 mt-1" style={serif}>期初 + 累計收入 − 累計支出</div>
+          </div>
+
+          {/* API */}
+          <div>
+            <div className="text-[10px] tracking-wider text-stone-500 mb-2">後台 API 網址</div>
+            <div className="text-[10px] text-stone-500 break-all p-2.5 bg-stone-50 rounded-sm font-mono">{apiUrl}</div>
+            <button onClick={onReset} className="mt-2 w-full px-4 py-2 text-xs border border-stone-300 rounded-sm hover:bg-stone-50">重新設定 API 網址</button>
+          </div>
+
+          {/* 部門說明 */}
+          <div>
+            <div className="text-[10px] tracking-wider text-stone-500 mb-3">部門說明</div>
+            <div className="space-y-2">
+              {DEPARTMENTS.map(d => (
+                <div key={d.id} className="flex items-start gap-3 p-3 bg-stone-50 rounded-sm">
+                  <div className="text-xl">{d.emoji}</div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium" style={{ color: d.color }}>{d.fullName}</div>
+                    <div className="text-[11px] text-stone-500 mt-0.5" style={serif}>{d.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="text-[10px] text-stone-400 leading-relaxed pt-2 border-t border-stone-100" style={serif}>
+            💡 直接打開 Google Sheet 也可檢視/編輯所有資料，並可匯出為 Excel<br/>
+            📱 加入 iPhone 桌面：Safari → 分享 → 加入主畫面（需先用 Netlify Drop 等服務託管）
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+
+</body>
+</html>
