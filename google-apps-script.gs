@@ -128,7 +128,7 @@ function loadAll() {
     t.paymentTerm = Number(t.paymentTerm) || 0;
     t.received = (t.received === true || t.received === 'TRUE' || t.received === 'true' || t.received === 1);
     if (t.date instanceof Date) {
-      t.date = Utilities.formatDate(t.date, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      t.date = Utilities.formatDate(t.date, 'Asia/Taipei', 'yyyy-MM-dd');
     }
     if (t.createdAt instanceof Date) {
       t.createdAt = t.createdAt.toISOString();
