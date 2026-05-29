@@ -572,7 +572,7 @@ function App() {
   // 期初現金（自動：openingBalance + 此期間之前的所有交易淨額）
   const periodStartCash = useMemo(() => {
     const { start } = getPeriodRange(period, cycleDay);
-    const before = transactions.filter(t => new Date(t.date) < start);
+    const before = transactions.filter(t => new Date(t.date + 'T00:00:00') < start);
     const i = before.filter(t => t.type === 'inflow').reduce((s, t) => s + Number(t.amount || 0), 0);
     const e = before.filter(t => t.type === 'outflow').reduce((s, t) => s + Number(t.amount || 0), 0);
     return openingBalance + i - e;
@@ -610,7 +610,7 @@ function App() {
     for (let i = 11; i >= 0; i--) {
       const k = shiftPeriod(curK, -i);
       const { end } = getPeriodRange(k, cycleDay);
-      const upTo = transactions.filter(t => new Date(t.date) <= end);
+      const upTo = transactions.filter(t => new Date(t.date + 'T00:00:00') <= end);
       const ii = upTo.filter(t => t.type === 'inflow').reduce((s, t) => s + Number(t.amount || 0), 0);
       const ee = upTo.filter(t => t.type === 'outflow').reduce((s, t) => s + Number(t.amount || 0), 0);
       const ptx = transactions.filter(t => isInPeriod(t, k, cycleDay));
