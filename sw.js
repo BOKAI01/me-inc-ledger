@@ -1,4 +1,4 @@
-const CACHE_NAME = 'meinc-v4';
+const CACHE_NAME = 'meinc-v5';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -6,9 +6,9 @@ const ASSETS_TO_CACHE = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   'https://cdn.tailwindcss.com',
-  'https://unpkg.com/react@18/umd/react.production.min.js',
-  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
-  'https://unpkg.com/@babel/standalone/babel.min.js',
+  'https://unpkg.com/react@18.3.1/umd/react.production.min.js',
+  'https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js',
+  'https://unpkg.com/@babel/standalone@7.26.5/babel.min.js',
   'https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;500;600&display=swap'
 ];
 

@@ -127,11 +127,19 @@ function loadAll() {
     t.amount = Number(t.amount) || 0;
     t.paymentTerm = Number(t.paymentTerm) || 0;
     t.received = (t.received === true || t.received === 'TRUE' || t.received === 'true' || t.received === 1);
-    if (t.date instanceof Date) {
-      t.date = Utilities.formatDate(t.date, 'Asia/Taipei', 'yyyy-MM-dd');
+    // 日期處理 — 統一轉為 yyyy-MM-dd（台灣時區）
+    if (t.date) {
+      if (t.date instanceof Date) {
+        t.date = Utilities.formatDate(t.date, 'Asia/Taipei', 'yyyy-MM-dd');
+      } else if (typeof t.date === 'string' && t.date.length > 10) {
+        // 處理 ISO 字串如 "2026-05-28T16:00:00.000Z"
+        t.date = Utilities.formatDate(new Date(t.date), 'Asia/Taipei', 'yyyy-MM-dd');
+      }
     }
     if (t.createdAt instanceof Date) {
-      t.createdAt = t.createdAt.toISOString();
+      t.createdAt = Utilities.formatDate(t.createdAt, 'Asia/Taipei', "yyyy-MM-dd'T'HH:mm:ss");
+    } else if (t.createdAt && typeof t.createdAt === 'string' && t.createdAt.includes('T')) {
+      t.createdAt = Utilities.formatDate(new Date(t.createdAt), 'Asia/Taipei', "yyyy-MM-dd'T'HH:mm:ss");
     }
     t.id = String(t.id);
     transactions.push(t);
