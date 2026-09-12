@@ -106,6 +106,16 @@ const callApi = async (url, action, payload = {}) => {
 };
 const api = (action, payload = {}) => callApi(localStorage.getItem(K_API), action, payload);
 
+/* index.html 已在載入程式的同時就發出 load 請求，這裡直接接手，省下解析時間 */
+let bootReq = (typeof window !== 'undefined' && window.__boot) || null;
+const apiLoad = async () => {
+  if (bootReq) {
+    const p = bootReq; bootReq = null;
+    try { const j = await p; if (j && j.ok && j.data) return j.data; } catch (e) {}
+  }
+  return api('load');
+};
+
 /* ---------- 離線佇列（單線同步，避免重複送出）---------- */
 const getQueue = () => { try { return JSON.parse(localStorage.getItem(K_QUEUE) || '[]'); } catch { return []; } };
 const setQueue = (q) => localStorage.setItem(K_QUEUE, JSON.stringify(q));
@@ -556,10 +566,11 @@ function App() {
     loadingRef.current = (async () => {
       try {
         if (isOnline() && getQueue().length) {
+          bootReq = null;                       // 有待送出的異動，預抓結果已過期
           const r = await flushQueue();
           if (r.synced) showToast(`已同步 ${r.synced} 筆離線記錄`);
         }
-        const data = await api('load');
+        const data = await apiLoad();
         const txns = (data.transactions || []).map(t => ({ ...t, date: String(t.date || '').slice(0, 10) }));
         setTransactions(txns);
         setOpeningBalance(Number(data.openingBalance) || 0);

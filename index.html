@@ -145,6 +145,17 @@ svg{display:block}
 </head>
 <body>
 <div id="root"><div class="boot">載入中⋯</div></div>
+<script>
+try{
+  var u = localStorage.getItem('meinc_api_url');
+  var q = localStorage.getItem('meinc_offline_queue');
+  if (u && (!q || q === '[]')) {
+    var fd = new FormData(); fd.append('payload', '{"action":"load"}');
+    window.__boot = fetch(u, { method:'POST', body:fd, redirect:'follow' })
+      .then(function(r){ return r.json(); }).catch(function(){ return null; });
+  }
+}catch(e){}
+</script>
 <link rel="modulepreload" href="./vendor.js">
 <script type="module" src="./app.js"></script>
 </body>
