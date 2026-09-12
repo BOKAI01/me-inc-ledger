@@ -27,6 +27,40 @@ const DEPARTMENTS = [
   { id: 'other_out', name: '其他', fullName: '其他 · 雜項部', emoji: '📂', color: '#888888', desc: '貸款、卡費、醫療、人情禮金、稅務' },
 ];
 
+/* 三個口袋：同一個帳戶內的資金分配，不是三個帳戶 */
+const POCKETS = [
+  { id: 'daily',     name: '日常口袋',   short: '日常', emoji: '👛', color: '#5B8C5A' },
+  { id: 'savings',   name: '儲蓄口袋',   short: '儲蓄', emoji: '🏦', color: '#A87B3D' },
+  { id: 'emergency', name: '緊急備用金', short: '緊急', emoji: '🛟', color: '#A0421C' },
+];
+const RESERVES = POCKETS.filter(p => p.id !== 'daily');
+const findPocket = (id) => POCKETS.find(p => p.id === id) || POCKETS[0];
+
+/* 由品項名稱推斷口袋，供舊資料辨識 */
+function pocketByName(text) {
+  const s = String(text || '');
+  if (/儲蓄|存款/.test(s)) return 'savings';
+  if (/備用金|緊急|急用/.test(s)) return 'emergency';
+  return null;
+}
+
+/**
+ * 一筆分錄只有兩種語意：
+ *   alloc  口袋之間的配置，帳戶總額不變，不是收入也不是支出
+ *   flow   真實的現金進出，pocket 記錄這筆從哪個口袋進出
+ */
+function classify(tx) {
+  if (tx.type === 'alloc') {
+    return { kind: 'alloc', dir: tx.category === 'alloc_out' ? 'out' : 'in', pocket: tx.account || 'emergency' };
+  }
+  // 舊資料相容：記成「支出-其他」且品項為備用金／儲蓄者，實為口袋配置
+  if (tx.type === 'outflow' && tx.category === 'other_out' && (!tx.account || tx.account === 'daily')) {
+    const p = pocketByName(tx.client);
+    if (p) return { kind: 'alloc', dir: 'in', pocket: p, legacy: true };
+  }
+  return { kind: 'flow', pocket: tx.account && tx.account !== '' ? tx.account : 'daily' };
+}
+
 const findDept   = (id) => DEPARTMENTS.find(d => d.id === id) || DEPARTMENTS[5];
 const findIncome = (id) => INCOME_CATS.find(c => c.id === id) || INCOME_CATS[4];
 
@@ -362,24 +396,55 @@ function PLBarChart({ history }) {
    記錄表單
    ============================================================ */
 function EntryForm({ initial, onClose, onSave, onDelete }) {
-  const [type, setType] = useState(initial?.type || 'outflow');
-  const [category, setCategory] = useState(initial?.category || (initial?.type === 'inflow' ? 'salary' : 'food'));
+  const initKind = initial ? (classify(initial).kind === 'alloc' ? 'alloc' : initial.type) : 'outflow';
+  const initC = initial ? classify(initial) : null;
+
+  const [kind, setKind] = useState(initKind);                       // outflow | inflow | alloc
+  const [category, setCategory] = useState(initial && initKind !== 'alloc' ? initial.category : 'food');
+  const [pocket, setPocket] = useState(initC ? (initC.kind === 'alloc' ? initC.pocket : initC.pocket) : 'daily');
+  const [dir, setDir] = useState(initC && initC.kind === 'alloc' ? initC.dir : 'in');
   const [date, setDate] = useState((initial?.date || todayStr()).slice(0, 10));
   const [amount, setAmount] = useState(initial ? String(initial.amount) : '');
   const [client, setClient] = useState(initial?.client || '');
   const [description, setDescription] = useState(initial?.description || '');
-  const [busy, setBusy] = useState(false);          // ← 防連點重複送出
-  const busyRef = useRef(false);                    // 同一個 tick 內也擋得住
-  const cats = type === 'inflow' ? INCOME_CATS : DEPARTMENTS;
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const isEdit = !!initial;
+
+  const setKindTo = (k) => {
+    setKind(k);
+    if (k === 'outflow') setCategory('food');
+    if (k === 'inflow') setCategory('salary');
+    if (k === 'alloc' && pocket === 'daily') setPocket('emergency');
+  };
 
   const submit = () => {
     if (busyRef.current) return;
     const amt = parseFloat(amount);
     if (!amount || isNaN(amt)) { alert('請填寫金額'); return; }
+    if (amt < 0) { alert('金額請填正數，方向以上方按鈕選擇'); return; }
     busyRef.current = true; setBusy(true);
-    onSave({ type, category, date, amount: amt, client: client.trim(), description: description.trim() });
+    if (kind === 'alloc') {
+      onSave({
+        type: 'alloc',
+        category: dir === 'in' ? 'alloc_in' : 'alloc_out',
+        account: pocket === 'daily' ? 'emergency' : pocket,
+        date, amount: amt, client: client.trim(), description: description.trim(),
+      });
+    } else {
+      onSave({
+        type: kind, category, account: pocket === 'daily' ? '' : pocket,
+        date, amount: amt, client: client.trim(), description: description.trim(),
+      });
+    }
   };
+
+  const cats = kind === 'inflow' ? INCOME_CATS : DEPARTMENTS;
+  const segs = [
+    { k: 'outflow', l: '支出', bg: '#A0421C' },
+    { k: 'inflow',  l: '收入', bg: '#1F3A2E' },
+    { k: 'alloc',   l: '撥款', bg: '#A87B3D' },
+  ];
 
   return html`
     <div class="mask" onClick=${onClose}>
@@ -390,25 +455,62 @@ function EntryForm({ initial, onClose, onSave, onDelete }) {
           <button class="iconbtn" onClick=${onClose} style="color:var(--t3)">${IX()}</button>
         </div>
         <div class="sheet-bd">
-          <div class="g2" style="gap:8px">
-            <button class=${'seg' + (type === 'outflow' ? ' on' : '')}
-              style=${type === 'outflow' ? { background: '#A0421C' } : {}}
-              onClick=${() => { setType('outflow'); setCategory('food'); }}>支出 Expense</button>
-            <button class=${'seg' + (type === 'inflow' ? ' on' : '')}
-              style=${type === 'inflow' ? { background: '#1F3A2E' } : {}}
-              onClick=${() => { setType('inflow'); setCategory('salary'); }}>收入 Revenue</button>
+          <div class="g3">
+            ${segs.map(g => html`
+              <button key=${g.k} class=${'seg' + (kind === g.k ? ' on' : '')}
+                style=${kind === g.k ? { background: g.bg } : {}} onClick=${() => setKindTo(g.k)}>${g.l}</button>`)}
           </div>
-          <div>
-            <div class="lbl" style="margin-bottom:8px">${type === 'inflow' ? '收入來源' : '部門 Department'}</div>
-            <div class="g3">
-              ${cats.map(c => html`
-                <button key=${c.id} class=${'opt' + (category === c.id ? ' on' : '')}
-                  style=${category === c.id ? { background: type === 'inflow' ? '#1F3A2E' : c.color } : {}}
-                  onClick=${() => setCategory(c.id)}>
-                  <div class="em">${c.emoji}</div><div class="nm">${c.name}</div>
-                </button>`)}
+
+          ${kind === 'alloc' ? html`
+            <div class="box" style="background:#FFFBF3;border-color:#E7D6B5">
+              <div class="note" style="color:var(--ink-2);margin:0">
+                撥款只是把同一個帳戶裡的錢分配到不同口袋，帳戶總額不變，不列為收入或支出。
+              </div>
             </div>
-          </div>
+            <div>
+              <div class="lbl" style="margin-bottom:8px">方向</div>
+              <div class="g2" style="gap:8px">
+                <button class=${'seg' + (dir === 'in' ? ' on' : '')} style=${dir === 'in' ? { background: '#A87B3D' } : {}}
+                  onClick=${() => setDir('in')}>日常 → 口袋</button>
+                <button class=${'seg' + (dir === 'out' ? ' on' : '')} style=${dir === 'out' ? { background: '#A87B3D' } : {}}
+                  onClick=${() => setDir('out')}>口袋 → 日常</button>
+              </div>
+            </div>
+            <div>
+              <div class="lbl" style="margin-bottom:8px">口袋</div>
+              <div class="g2" style="gap:8px">
+                ${RESERVES.map(pk => html`
+                  <button key=${pk.id} class=${'opt' + (pocket === pk.id ? ' on' : '')}
+                    style=${pocket === pk.id ? { background: pk.color } : {}} onClick=${() => setPocket(pk.id)}>
+                    <div class="em">${pk.emoji}</div><div class="nm">${pk.name}</div>
+                  </button>`)}
+              </div>
+            </div>
+          ` : html`
+            <div>
+              <div class="lbl" style="margin-bottom:8px">${kind === 'inflow' ? '收入來源' : '部門 Department'}</div>
+              <div class="g3">
+                ${cats.map(c => html`
+                  <button key=${c.id} class=${'opt' + (category === c.id ? ' on' : '')}
+                    style=${category === c.id ? { background: kind === 'inflow' ? '#1F3A2E' : c.color } : {}}
+                    onClick=${() => setCategory(c.id)}>
+                    <div class="em">${c.emoji}</div><div class="nm">${c.name}</div>
+                  </button>`)}
+              </div>
+            </div>
+            <div>
+              <div class="lbl" style="margin-bottom:8px">${kind === 'inflow' ? '進入哪個口袋' : '從哪個口袋支付'}</div>
+              <div class="g3">
+                ${POCKETS.map(pk => html`
+                  <button key=${pk.id} class=${'opt' + (pocket === pk.id ? ' on' : '')}
+                    style=${pocket === pk.id ? { background: pk.color } : {}} onClick=${() => setPocket(pk.id)}>
+                    <div class="em">${pk.emoji}</div><div class="nm">${pk.short}</div>
+                  </button>`)}
+              </div>
+              ${pocket !== 'daily' && html`<div class="mini">這筆會從${findPocket(pocket).name}扣除，仍計入該部門的支出統計</div>`}
+            </div>
+          `}
+
           <div>
             <div class="lbl" style="margin-bottom:8px">金額 (NT$)</div>
             <input class="inp big" type="number" inputmode="decimal" placeholder="0"
@@ -419,14 +521,15 @@ function EntryForm({ initial, onClose, onSave, onDelete }) {
             <input class="inp" type="date" value=${date} onInput=${e => setDate(e.target.value)} />
           </div>
           <div>
-            <div class="lbl" style="margin-bottom:8px">${type === 'inflow' ? '收入來源（公司／單位）' : '商家 / 對象'}</div>
+            <div class="lbl" style="margin-bottom:8px">${kind === 'inflow' ? '收入來源（公司／單位）' : kind === 'alloc' ? '說明（選填）' : '商家 / 對象'}</div>
             <input class="inp" type="text" value=${client} onInput=${e => setClient(e.target.value)}
-                   placeholder=${type === 'inflow' ? '例：典試科技、五蘊' : '例：房租、信用卡、全家'} />
+                   placeholder=${kind === 'inflow' ? '例：典試科技、五蘊' : kind === 'alloc' ? '例：每月固定撥款' : '例：房租、信用卡、全家'} />
           </div>
-          <div>
-            <div class="lbl" style="margin-bottom:8px">備註（選填）</div>
-            <input class="inp" type="text" value=${description} onInput=${e => setDescription(e.target.value)} placeholder="例：午餐便當" />
-          </div>
+          ${kind !== 'alloc' && html`
+            <div>
+              <div class="lbl" style="margin-bottom:8px">備註（選填）</div>
+              <input class="inp" type="text" value=${description} onInput=${e => setDescription(e.target.value)} placeholder="例：午餐便當" />
+            </div>`}
         </div>
         <div class="sheet-ft">
           ${onDelete && html`<button class="btn btn-d" onClick=${onDelete}>${ITrash()}</button>`}
@@ -440,7 +543,9 @@ function EntryForm({ initial, onClose, onSave, onDelete }) {
 /* ============================================================
    設定
    ============================================================ */
-function SettingsSheet({ apiUrl, openingBalance, currentBalance, cycleDay, onChangeCycle, onClose, onReset, onSaveOpening, onDedupe }) {
+function SettingsSheet({ apiUrl, openingBalance, currentBalance, cycleDay, fundTarget, onChangeTarget, onChangeCycle, onClose, onReset, onSaveOpening, onDedupe }) {
+  const [tgt, setTgt] = useState(String(fundTarget));
+  const [tgtDirty, setTgtDirty] = useState(false);
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(String(openingBalance));
   const [tmp, setTmp] = useState(cycleDay);
@@ -492,6 +597,17 @@ function SettingsSheet({ apiUrl, openingBalance, currentBalance, cycleDay, onCha
           </div>
 
           <div>
+            <div class="lbl" style="margin-bottom:6px">緊急備用金目標</div>
+            <div class="row" style="gap:8px">
+              <input class="inp mono" type="number" inputmode="decimal" value=${tgt}
+                     onInput=${e => { setTgt(e.target.value); setTgtDirty(true); }} />
+              ${tgtDirty && html`<button class="btn btn-p" style="flex:0 0 auto"
+                onClick=${() => { onChangeTarget(parseFloat(tgt) || 0); setTgtDirty(false); }}>儲存</button>`}
+            </div>
+            <div class="mini">口袋卡片的進度條依此計算，填 0 可隱藏</div>
+          </div>
+
+          <div>
             <div class="lbl" style="margin-bottom:6px">目前公司現金</div>
             <div class="mono" style=${{ fontSize: '17px', fontWeight: 600, color: currentBalance >= 0 ? '#1F3A2E' : '#A0421C' }}>$${fmt(currentBalance)}</div>
             <div class="mini">期初 + 累計收入 − 累計支出</div>
@@ -538,6 +654,7 @@ function App() {
 
   const [transactions, setTransactions] = useState(() => (cached?.transactions) || []);
   const [openingBalance, setOpeningBalance] = useState(() => cached?.openingBalance || 0);
+  const [fundTarget, setFundTarget] = useState(() => Number(cached?.fundTarget) || 50000);
   const [cycleDay, setCycleDay] = useState(() => Number(cached?.cycleDay || localStorage.getItem(K_CYCLE)) || 1);
   const [hasData, setHasData] = useState(() => !!cached);   // 是否已有可顯示的資料
   const [loadState, setLoadState] = useState('loading');    // loading | ok | error
@@ -574,10 +691,11 @@ function App() {
         const txns = (data.transactions || []).map(t => ({ ...t, date: String(t.date || '').slice(0, 10) }));
         setTransactions(txns);
         setOpeningBalance(Number(data.openingBalance) || 0);
+        setFundTarget(Number(data.fundTarget) || 50000);
         const cd = Number(data.cycleDay) || 1;
         setCycleDay(cd);
         localStorage.setItem(K_CYCLE, String(cd));
-        localStorage.setItem(K_CACHE, JSON.stringify({ transactions: txns, openingBalance: data.openingBalance, cycleDay: cd }));
+        localStorage.setItem(K_CACHE, JSON.stringify({ transactions: txns, openingBalance: data.openingBalance, cycleDay: cd, fundTarget: data.fundTarget }));
         setHasData(true); setLoadState('ok');
       } catch (e) {
         setLoadState('error');
@@ -608,8 +726,11 @@ function App() {
 
   /* ---- 期間統計 ---- */
   const periodTx = useMemo(() => transactions.filter(t => isInPeriod(t, period, cycleDay)), [transactions, period, cycleDay]);
-  const inc = periodTx.filter(t => t.type === 'inflow').reduce((s, t) => s + Number(t.amount || 0), 0);
-  const exp = periodTx.filter(t => t.type === 'outflow').reduce((s, t) => s + Number(t.amount || 0), 0);
+
+  /* 只有 flow 是真實現金進出；alloc 只是口袋之間的配置 */
+  const periodFlows = useMemo(() => periodTx.filter(t => classify(t).kind === 'flow'), [periodTx]);
+  const inc = periodFlows.filter(t => t.type === 'inflow').reduce((s, t) => s + Number(t.amount || 0), 0);
+  const exp = periodFlows.filter(t => t.type === 'outflow').reduce((s, t) => s + Number(t.amount || 0), 0);
   const netProfit = inc - exp;
   const margin = inc > 0 ? (netProfit / inc) * 100 : 0;
 
@@ -617,6 +738,7 @@ function App() {
     const { start } = getPeriodRange(period, cycleDay);
     let v = openingBalance;
     for (const t of transactions) {
+      if (classify(t).kind !== 'flow') continue;
       const td = txDate(t); if (!td || td >= start) continue;
       v += (t.type === 'inflow' ? 1 : -1) * Number(t.amount || 0);
     }
@@ -624,20 +746,38 @@ function App() {
   }, [transactions, period, cycleDay, openingBalance]);
   const periodEndCash = periodStartCash + netProfit;
 
+  /* 口袋餘額：儲蓄與緊急為累計配置減去由該口袋支付者，日常為總額減去兩者 */
+  const pockets = useMemo(() => {
+    let total = openingBalance, savings = 0, emergency = 0;
+    const bump = (id, v) => { if (id === 'savings') savings += v; else if (id === 'emergency') emergency += v; };
+    for (const t of transactions) {
+      const c = classify(t);
+      const amt = Number(t.amount || 0);
+      if (c.kind === 'alloc') { bump(c.pocket, c.dir === 'in' ? amt : -amt); continue; }
+      total += (t.type === 'inflow' ? 1 : -1) * amt;
+      if (c.pocket !== 'daily') bump(c.pocket, (t.type === 'inflow' ? 1 : -1) * amt);
+    }
+    return { total, savings, emergency, daily: total - savings - emergency };
+  }, [transactions, openingBalance]);
+  const currentBalance = pockets.total;
+
+  /* 本期各口袋的變動 */
+  const pocketMoves = useMemo(() => {
+    const m = { savings: { in: 0, spend: 0 }, emergency: { in: 0, spend: 0 } };
+    for (const t of periodTx) {
+      const c = classify(t);
+      const amt = Number(t.amount || 0);
+      if (c.kind === 'alloc' && m[c.pocket]) m[c.pocket].in += c.dir === 'in' ? amt : -amt;
+      if (c.kind === 'flow' && m[c.pocket] && t.type === 'outflow') m[c.pocket].spend += amt;
+    }
+    return m;
+  }, [periodTx]);
+
   const deptStats = useMemo(() => DEPARTMENTS.map(d => {
-    const txs = periodTx.filter(t => t.type === 'outflow' && t.category === d.id);
+    const txs = periodFlows.filter(t => t.type === 'outflow' && t.category === d.id);
     const total = txs.reduce((s, t) => s + Number(t.amount || 0), 0);
     return { ...d, total, count: txs.length, pct: exp > 0 ? (total / exp) * 100 : 0 };
-  }).sort((a, b) => b.total - a.total), [periodTx, exp]);
-
-  const totals = useMemo(() => {
-    let i = 0, o = 0;
-    for (const t of transactions) {
-      if (t.type === 'inflow') i += Number(t.amount || 0); else o += Number(t.amount || 0);
-    }
-    return { i, o };
-  }, [transactions]);
-  const currentBalance = openingBalance + totals.i - totals.o;
+  }).sort((a, b) => b.total - a.total), [periodFlows, exp]);
 
   const history = useMemo(() => {
     const out = [];
@@ -647,6 +787,7 @@ function App() {
       const { end } = getPeriodRange(key, cycleDay);
       let cash = openingBalance, pi = 0, pe = 0;
       for (const t of transactions) {
+        if (classify(t).kind !== 'flow') continue;
         const td = txDate(t); if (!td) continue;
         const amt = Number(t.amount || 0);
         if (td <= end) cash += (t.type === 'inflow' ? 1 : -1) * amt;
@@ -663,8 +804,9 @@ function App() {
     const arr = [];
     for (let i = 1; i <= 3; i++) {
       const key = shiftPeriod(curK, -i);
-      const e = transactions.filter(t => t.type === 'outflow' && isInPeriod(t, key, cycleDay))
-                            .reduce((s, t) => s + Number(t.amount || 0), 0);
+      const e = transactions
+        .filter(t => t.type === 'outflow' && classify(t).kind === 'flow' && isInPeriod(t, key, cycleDay))
+        .reduce((s, t) => s + Number(t.amount || 0), 0);
       if (e > 0) arr.push(e);
     }
     return arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : 0;
@@ -672,7 +814,11 @@ function App() {
   const runway = burnRate > 0 ? currentBalance / burnRate : Infinity;
 
   const filteredTx = useMemo(() => periodTx.filter(t => {
+    const c = classify(t);
     if (filter === 'all') return true;
+    if (filter === 'alloc') return c.kind === 'alloc';
+    if (filter === 'savings' || filter === 'emergency') return c.pocket === filter;
+    if (c.kind === 'alloc') return false;
     if (filter === 'income') return t.type === 'inflow';
     if (filter === 'expense') return t.type === 'outflow';
     return t.type === 'outflow' && t.category === filter;
@@ -688,7 +834,7 @@ function App() {
     setShowForm(false); setEditingTx(null);
     setSyncing(true);
     const op = isEdit
-      ? { action: 'updateTxn', payload: { id: tx.id, fields: { type: tx.type, category: tx.category, date: tx.date, amount: tx.amount, client: tx.client, description: tx.description } } }
+      ? { action: 'updateTxn', payload: { id: tx.id, fields: { type: tx.type, category: tx.category, date: tx.date, amount: tx.amount, client: tx.client, description: tx.description, account: tx.account || '' } } }
       : { action: 'addTxn', payload: { txn: tx } };
     try {
       if (!isOnline()) throw new Error('offline');
@@ -728,6 +874,13 @@ function App() {
     setCycleDay(d); setPeriodTouched(false); localStorage.setItem(K_CYCLE, String(d));
     try { await api('setSetting', { key: 'cycleDay', value: d }); showToast(`結算日已設為每月 ${d} 號`); }
     catch (e) { setCycleDay(prev); showToast('儲存失敗：' + e.message, 'error'); }
+  };
+
+  const changeTarget = async (v) => {
+    const prev = fundTarget;
+    setFundTarget(v);
+    try { await api('setSetting', { key: 'fundTarget', value: v }); showToast('目標已更新'); }
+    catch (e) { setFundTarget(prev); showToast('儲存失敗：' + e.message, 'error'); }
   };
 
   const saveOpening = async (v) => {
@@ -831,6 +984,44 @@ function App() {
           </div>
         </section>
 
+        <!-- 口袋配置 -->
+        <section class="card">
+          <div class="card-hd">
+            <span class="eyebrow">口袋配置</span>
+            <span class="sub">帳戶總額 $${fmt(pockets.total)}</span>
+          </div>
+          <div class="card-bd" style="display:flex;flex-direction:column;gap:14px">
+            ${POCKETS.map(pk => {
+              const bal = pockets[pk.id];
+              const mv = pocketMoves[pk.id];
+              const pct = pockets.total > 0 ? Math.max(0, (bal / pockets.total) * 100) : 0;
+              return html`
+                <div key=${pk.id}>
+                  <div class="between" style="margin-bottom:4px">
+                    <div class="row" style="gap:8px">
+                      <span style="font-size:16px">${pk.emoji}</span>
+                      <span style="font-size:14px;font-weight:500">${pk.name}</span>
+                      ${bal < 0 && html`<span class="tag" style="color:#991B1B;border-color:#FCA5A5">已超支</span>`}
+                    </div>
+                    <span class="mono" style=${{ fontSize: '15px', fontWeight: 600, color: bal < 0 ? '#A0421C' : pk.color }}>$${fmt(bal)}</span>
+                  </div>
+                  <div class="bar"><i style=${{ width: Math.min(100, pct) + '%', background: pk.color }}></i></div>
+                  ${mv && (mv.in !== 0 || mv.spend !== 0) && html`
+                    <div class="mini">本期 ${mv.in !== 0 ? `撥${mv.in > 0 ? '入' : '回'} $${fmt(Math.abs(mv.in))}` : ''}${mv.in !== 0 && mv.spend !== 0 ? '、' : ''}${mv.spend !== 0 ? `動用 $${fmt(mv.spend)}` : ''}</div>`}
+                </div>`;
+            })}
+            ${fundTarget > 0 && html`
+              <div class="divider-t">
+                <div class="between" style="margin-bottom:4px">
+                  <span class="lbl">緊急備用金目標</span>
+                  <span class="mono sub">$${fmt(pockets.emergency)} / $${fmt(fundTarget)}</span>
+                </div>
+                <div class="bar"><i style=${{ width: Math.min(100, Math.max(0, (pockets.emergency / fundTarget) * 100)) + '%', background: '#A0421C' }}></i></div>
+                <div class="mini">${pockets.emergency >= fundTarget ? '已達標 🎉' : `還差 $${fmt(fundTarget - pockets.emergency)}`}</div>
+              </div>`}
+          </div>
+        </section>
+
         <!-- 部門支出 -->
         ${exp > 0 && html`
         <section class="card">
@@ -876,6 +1067,8 @@ function App() {
         <!-- 篩選 -->
         <section class="chips">
           ${[{ k: 'all', l: '全部' }, { k: 'income', l: '收入' }, { k: 'expense', l: '支出' },
+             { k: 'alloc', l: '🔁 撥款' },
+             ...RESERVES.map(p => ({ k: p.id, l: p.emoji + ' ' + p.short })),
              ...DEPARTMENTS.map(d => ({ k: d.id, l: d.emoji + ' ' + d.name }))].map(f => html`
             <button key=${f.k} class=${'chip' + (filter === f.k ? ' on' : '')} onClick=${() => setFilter(f.k)}>${f.l}</button>`)}
         </section>
@@ -886,13 +1079,31 @@ function App() {
           ${filteredTx.length === 0
             ? html`<div style="padding:48px 20px;text-align:center;color:var(--t3);font-size:14px">本期此類別暫無記錄</div>`
             : filteredTx.map(tx => {
+                const c = classify(tx);
+                if (c.kind === 'alloc') {
+                  const pk = findPocket(c.pocket);
+                  const into = c.dir === 'in';
+                  return html`
+                    <button key=${tx.id} class="tx" onClick=${() => { setEditingTx(tx); setShowForm(true); }}>
+                      <div class="tx-ic" style="background:#EFEDE6">🔁</div>
+                      <div style="flex:1;min-width:0">
+                        <div class="tx-nm">${into ? `撥入${pk.name}` : `${pk.name}撥回日常`}</div>
+                        <div class="tx-mt">口袋配置 · ${tx.date}${tx.client ? ' · ' + tx.client : ''}${c.legacy ? ' · 舊格式' : ''}</div>
+                      </div>
+                      <div class="tx-am" style="color:#78716C">${into ? '→' : '←'}$${fmt(tx.amount)}</div>
+                    </button>`;
+                }
                 const isInc = tx.type === 'inflow';
                 const cat = isInc ? findIncome(tx.category) : findDept(tx.category);
+                const pk = findPocket(c.pocket);
                 return html`
                   <button key=${tx.id} class="tx" onClick=${() => { setEditingTx(tx); setShowForm(true); }}>
                     <div class="tx-ic" style=${{ background: isInc ? '#E8F0EA' : cat.color + '22' }}>${cat.emoji}</div>
                     <div style="flex:1;min-width:0">
-                      <div class="tx-nm">${tx.client || cat.name}</div>
+                      <div class="tx-nm">
+                        ${tx.client || cat.name}
+                        ${c.pocket !== 'daily' && html`<span class="tag" style=${{ color: pk.color, borderColor: pk.color + '55' }}>${pk.short}</span>`}
+                      </div>
                       <div class="tx-mt">${cat.name} · ${tx.date}${tx.description ? ' · ' + tx.description : ''}</div>
                     </div>
                     <div class="tx-am" style=${{ color: isInc ? '#1F3A2E' : '#A0421C' }}>
@@ -918,8 +1129,8 @@ function App() {
         onDelete=${editingTx ? () => handleDelete(editingTx.id) : null} />`}
 
       ${showSettings && html`<${SettingsSheet} apiUrl=${apiUrl} openingBalance=${openingBalance}
-        currentBalance=${currentBalance} cycleDay=${cycleDay}
-        onChangeCycle=${changeCycle} onSaveOpening=${saveOpening} onDedupe=${handleDedupe}
+        currentBalance=${currentBalance} cycleDay=${cycleDay} fundTarget=${fundTarget}
+        onChangeTarget=${changeTarget} onChangeCycle=${changeCycle} onSaveOpening=${saveOpening} onDedupe=${handleDedupe}
         onClose=${() => setShowSettings(false)}
         onReset=${() => { localStorage.removeItem(K_API); setApiUrl(null); }} />`}
     </div>`;
