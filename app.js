@@ -541,6 +541,87 @@ function EntryForm({ initial, onClose, onSave, onDelete }) {
 }
 
 /* ============================================================
+   重複檢查
+   ============================================================ */
+function DuplicateSheet({ groups, loading, onClose, onDelete, onRescan }) {
+  const [working, setWorking] = useState('');
+  const total = groups.reduce((s, g) => s + (g.reason === 'id' ? g.items.length - 1 : g.items.length - 1), 0);
+
+  const del = async (id, tag) => {
+    setWorking(tag);
+    await onDelete(id);
+    setWorking('');
+  };
+
+  return html`
+    <div class="mask" onClick=${onClose}>
+      <div class="sheet" onClick=${e => e.stopPropagation()}>
+        <div class="grab"></div>
+        <div class="sheet-hd">
+          <h3>重複檢查</h3>
+          <button class="iconbtn" onClick=${onClose} style="color:var(--t3)">${IX()}</button>
+        </div>
+        <div class="sheet-bd">
+          ${loading
+            ? html`<div class="row" style="gap:8px;justify-content:center;padding:32px 0;color:var(--t2)">
+                <span class="spin">${IRef()}</span>掃描中⋯</div>`
+            : groups.length === 0
+              ? html`<div style="padding:32px 0;text-align:center;color:var(--t2);font-size:14px">沒有發現重複記錄 🎉</div>`
+              : html`
+                <div class="box" style="background:#FFFBF3;border-color:#E7D6B5">
+                  <div class="note" style="margin:0;color:var(--ink-2)">
+                    共 ${groups.length} 組可疑記錄，多餘 ${total} 筆。刪除前請先確認，這個動作無法復原。
+                  </div>
+                </div>
+                ${groups.map((g, gi) => {
+                  const first = g.items[0];
+                  const cat = first.type === 'inflow' ? findIncome(first.category) : findDept(first.category);
+                  const name = first.client || cat.name;
+                  return html`
+                    <div key=${g.key + gi} class="box" style="padding:0;overflow:hidden">
+                      <div class="between" style="padding:10px 14px;background:#FAFAF8;border-bottom:1px solid var(--line)">
+                        <div>
+                          <div style="font-size:14px;font-weight:500">${name}</div>
+                          <div class="sub">${first.date} · $${fmt(first.amount)} · ${g.items.length} 筆</div>
+                        </div>
+                        <span class="tag" style=${g.reason === 'id'
+                          ? { color: '#991B1B', borderColor: '#FCA5A5' }
+                          : { color: '#7A5A2C', borderColor: '#E7D6B5' }}>
+                          ${g.reason === 'id' ? '確定重複' : '疑似重複'}
+                        </span>
+                      </div>
+                      ${g.items.map((it, ii) => {
+                        const tag = g.key + ':' + ii;
+                        const busy = working === tag;
+                        return html`
+                          <div key=${tag} class="between" style="padding:10px 14px;border-bottom:1px solid var(--line)">
+                            <div style="min-width:0">
+                              <div class="mono" style="font-size:12px;color:var(--t2)">
+                                ${it.createdAt ? String(it.createdAt).replace('T', ' ') : '無建立時間'}
+                              </div>
+                              <div class="sub">id ${it.id}${it.description ? ' · ' + it.description : ''}</div>
+                            </div>
+                            <div class="row" style="gap:6px;flex:0 0 auto">
+                              ${ii === 0
+                                ? html`<span class="tag" style="color:#15803d;border-color:#A8D5B5">建議保留</span>`
+                                : html`<button class="btn btn-d" style="padding:6px 10px;font-size:12px"
+                                    disabled=${busy} onClick=${() => del(it.id, tag)}>
+                                    ${busy ? '刪除中⋯' : '刪除這筆'}</button>`}
+                            </div>
+                          </div>`;
+                      })}
+                    </div>`;
+                })}`}
+        </div>
+        <div class="sheet-ft">
+          <button class="btn btn-g" onClick=${onRescan}>重新掃描</button>
+          <button class="btn btn-p" onClick=${onClose}>完成</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ============================================================
    設定
    ============================================================ */
 function SettingsSheet({ apiUrl, openingBalance, currentBalance, cycleDay, fundTarget, onChangeTarget, onChangeCycle, onClose, onReset, onSaveOpening, onDedupe }) {
@@ -550,7 +631,6 @@ function SettingsSheet({ apiUrl, openingBalance, currentBalance, cycleDay, fundT
   const [val, setVal] = useState(String(openingBalance));
   const [tmp, setTmp] = useState(cycleDay);
   const [dirty, setDirty] = useState(false);
-  const [cleaning, setCleaning] = useState(false);
   const preview = getPeriodLabelFull(getCurrentPeriod(tmp), tmp);
 
   return html`
@@ -615,10 +695,8 @@ function SettingsSheet({ apiUrl, openingBalance, currentBalance, cycleDay, fundT
 
           <div>
             <div class="lbl" style="margin-bottom:6px">資料維護</div>
-            <button class="btn btn-g" style="width:100%" disabled=${cleaning}
-              onClick=${async () => { setCleaning(true); await onDedupe(); setCleaning(false); }}>
-              ${cleaning ? '檢查中⋯' : '掃描並清除重複記錄'}</button>
-            <div class="mini">只刪除 id 完全相同的重複列；疑似重複（同日同額）僅提示，不自動刪除</div>
+            <button class="btn btn-g" style="width:100%" onClick=${onDedupe}>檢查重複記錄</button>
+            <div class="mini">列出可疑記錄供你逐筆確認，不會自動刪除任何資料</div>
           </div>
 
           <div>
@@ -668,6 +746,9 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [editingTx, setEditingTx] = useState(null);
+  const [showDup, setShowDup] = useState(false);
+  const [dupGroups, setDupGroups] = useState([]);
+  const [dupLoading, setDupLoading] = useState(false);
   const loadingRef = useRef(null);
 
   const showToast = useCallback((msg, type = 'success') => {
@@ -860,13 +941,37 @@ function App() {
     } finally { setSyncing(false); }
   };
 
-  const handleDedupe = async () => {
+  const scanDuplicates = async () => {
+    setShowSettings(false); setShowDup(true); setDupLoading(true);
     try {
-      const r = await api('dedupe');
-      await reload();
-      const s = r.removed > 0 ? `已清除 ${r.removed} 筆重複` : '沒有完全重複的記錄';
-      showToast(r.suspicious > 0 ? `${s}；另有 ${r.suspicious} 筆疑似重複待你確認` : s, r.suspicious > 0 ? 'info' : 'success');
-    } catch (e) { showToast('清理失敗：' + e.message, 'error'); }
+      const r = await api('scanDuplicates');
+      setDupGroups(r.groups || []);
+    } catch (e) {
+      setDupGroups([]); showToast('掃描失敗：' + e.message, 'error');
+    } finally { setDupLoading(false); }
+  };
+
+  /* 只刪除使用者指定的那一列；同 id 的多列一次刪一筆 */
+  const deleteDuplicate = async (id) => {
+    try {
+      await api('deleteTxn', { id });
+      setDupGroups(prev => prev
+        .map(g => {
+          let dropped = false;
+          const items = g.items.filter(it => {
+            if (!dropped && it.id === id && g.items.indexOf(it) !== 0) { dropped = true; return false; }
+            return true;
+          });
+          return { ...g, items };
+        })
+        .filter(g => g.items.length > 1));
+      setTransactions(prev => {
+        const i = prev.findIndex(t => t.id === id);
+        return i < 0 ? prev : [...prev.slice(0, i), ...prev.slice(i + 1)];
+      });
+      showToast('已刪除 1 筆');
+      reload();
+    } catch (e) { showToast('刪除失敗：' + e.message, 'error'); }
   };
 
   const changeCycle = async (d) => {
@@ -1128,9 +1233,12 @@ function App() {
         onSave=${handleSave}
         onDelete=${editingTx ? () => handleDelete(editingTx.id) : null} />`}
 
+      ${showDup && html`<${DuplicateSheet} groups=${dupGroups} loading=${dupLoading}
+        onDelete=${deleteDuplicate} onRescan=${scanDuplicates} onClose=${() => setShowDup(false)} />`}
+
       ${showSettings && html`<${SettingsSheet} apiUrl=${apiUrl} openingBalance=${openingBalance}
         currentBalance=${currentBalance} cycleDay=${cycleDay} fundTarget=${fundTarget}
-        onChangeTarget=${changeTarget} onChangeCycle=${changeCycle} onSaveOpening=${saveOpening} onDedupe=${handleDedupe}
+        onChangeTarget=${changeTarget} onChangeCycle=${changeCycle} onSaveOpening=${saveOpening} onDedupe=${scanDuplicates}
         onClose=${() => setShowSettings(false)}
         onReset=${() => { localStorage.removeItem(K_API); setApiUrl(null); }} />`}
     </div>`;
