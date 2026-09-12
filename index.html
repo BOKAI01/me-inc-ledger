@@ -127,6 +127,12 @@ svg{display:block}
 /* toast */
 .toast{position:fixed;top:calc(12px + env(safe-area-inset-top));left:16px;right:16px;z-index:60;padding:12px 16px;border-radius:3px;font-size:14px;text-align:center;box-shadow:0 6px 20px #0002;animation:fade .15s ease-out}
 
+/* status */
+.statusbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;border-radius:3px;font-size:12px;background:#FFF8E8;border:1px solid #F0DFB5;color:#7A5A2C}
+.statusbar .spin{margin-right:6px;display:inline-block;vertical-align:-2px}
+.statusbar.err-bar{background:#FEF2F2;border-color:#FECACA;color:#991B1B}
+.retry{font-size:12px;font-weight:600;padding:5px 12px;border:1px solid currentColor;border-radius:3px;flex:0 0 auto}
+
 /* boot */
 .boot{min-height:100vh;display:flex;align-items:center;justify-content:center;color:var(--t2);font-size:14px;gap:8px}
 .note{font-size:11px;line-height:1.6;color:var(--t2)}
@@ -139,6 +145,7 @@ svg{display:block}
 </head>
 <body>
 <div id="root"><div class="boot">載入中⋯</div></div>
+<link rel="modulepreload" href="./vendor.js">
 <script type="module" src="./app.js"></script>
 </body>
 </html>

@@ -95,7 +95,7 @@ const callApi = async (url, action, payload = {}) => {
   const fd = new FormData();
   fd.append('payload', JSON.stringify({ action, ...payload }));
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), 20000);
+  const timer = setTimeout(() => ctl.abort(), 12000);
   try {
     const res = await fetch(url, { method: 'POST', body: fd, redirect: 'follow', signal: ctl.signal });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -529,7 +529,8 @@ function App() {
   const [transactions, setTransactions] = useState(() => (cached?.transactions) || []);
   const [openingBalance, setOpeningBalance] = useState(() => cached?.openingBalance || 0);
   const [cycleDay, setCycleDay] = useState(() => Number(cached?.cycleDay || localStorage.getItem(K_CYCLE)) || 1);
-  const [booted, setBooted] = useState(() => !!cached);     // 有快取 → 立刻顯示畫面
+  const [hasData, setHasData] = useState(() => !!cached);   // 是否已有可顯示的資料
+  const [loadState, setLoadState] = useState('loading');    // loading | ok | error
   const [syncing, setSyncing] = useState(false);
   const [online, setOnline] = useState(isOnline());
   const [toast, setToast] = useState(null);
@@ -551,7 +552,7 @@ function App() {
   const reload = useCallback(async () => {
     if (!apiUrl) return;
     if (loadingRef.current) return loadingRef.current;
-    setSyncing(true);
+    setSyncing(true); setLoadState('loading');
     loadingRef.current = (async () => {
       try {
         if (isOnline() && getQueue().length) {
@@ -566,28 +567,28 @@ function App() {
         setCycleDay(cd);
         localStorage.setItem(K_CYCLE, String(cd));
         localStorage.setItem(K_CACHE, JSON.stringify({ transactions: txns, openingBalance: data.openingBalance, cycleDay: cd }));
+        setHasData(true); setLoadState('ok');
       } catch (e) {
-        if (!isOnline()) showToast('離線中，顯示快取資料', 'info');
-        else showToast('連線失敗，顯示快取資料', 'error');
+        setLoadState('error');
       } finally {
-        setSyncing(false); setBooted(true); loadingRef.current = null;
+        setSyncing(false); loadingRef.current = null;
       }
     })();
     return loadingRef.current;
   }, [apiUrl, showToast]);
 
-  useEffect(() => { if (apiUrl) reload(); else setBooted(true); }, [apiUrl, reload]);
+  useEffect(() => { if (apiUrl) reload(); }, [apiUrl, reload]);
 
   /* 連線狀態 + 回到前景時背景更新 */
   useEffect(() => {
     const on = () => { setOnline(true); reload(); };
     const off = () => setOnline(false);
-    const vis = () => { if (document.visibilityState === 'visible') reload(); };
+    const vis = () => { if (document.visibilityState === 'visible' && loadState !== 'loading') reload(); };
     window.addEventListener('online', on);
     window.addEventListener('offline', off);
     document.addEventListener('visibilitychange', vis);
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); document.removeEventListener('visibilitychange', vis); };
-  }, [reload]);
+  }, [reload, loadState]);
 
   /* 結算日改變 → 若使用者沒手動選期間，跳回當期 */
   useEffect(() => {
@@ -727,7 +728,6 @@ function App() {
 
   /* ---- 畫面 ---- */
   if (!apiUrl) return html`<${SetupScreen} onSaved=${setApiUrl} />`;
-  if (!booted) return html`<div class="boot"><span class="spin">${IRef()}</span>載入中⋯</div>`;
 
   const label = getPeriodLabel(period, cycleDay);
   const isCur = period === getCurrentPeriod(cycleDay);
@@ -768,6 +768,16 @@ function App() {
       </header>
 
       <main class="main">
+        ${!hasData && loadState === 'loading' && html`
+          <div class="statusbar">
+            <span class="spin">${IRef(13)}</span>正在連線 Google Sheet 後台⋯
+          </div>`}
+        ${loadState === 'error' && html`
+          <div class="statusbar err-bar">
+            <span>${hasData ? '後台連線失敗，顯示的是上次同步的資料' : '後台連線失敗，尚未取得資料'}</span>
+            <button class="retry" onClick=${reload}>重試</button>
+          </div>`}
+
         <!-- 本期損益 -->
         <section class="card">
           <div class="card-hd tinted">

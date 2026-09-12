@@ -1,7 +1,8 @@
-/* Me, Inc. — Service Worker v6
-   只快取自家檔案（無 CDN），程式檔採 stale-while-revalidate：
-   先用快取秒開，背景抓新版，下次開啟即為最新。 */
-const CACHE = 'meinc-v6';
+/* Me, Inc. — Service Worker v7
+   HTML：網路優先（2.5 秒逾時就退回快取）→ 改版後一開就是新版
+   程式與圖示：快取優先 + 背景更新 → 秒開
+   後台 API：完全不攔截 */
+const CACHE = 'meinc-v7';
 const ASSETS = [
   './',
   './index.html',
@@ -28,21 +29,34 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+const timeout = (ms) => new Promise((res) => setTimeout(() => res(null), ms));
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  if (req.method !== 'GET') return;                      // 寫入 API 一律不攔截
-  if (req.url.includes('script.google.com')) return;     // 後台資料不快取
+  if (req.method !== 'GET') return;
+  if (req.url.includes('script.google.com')) return;
   if (new URL(req.url).origin !== self.location.origin) return;
 
-  e.respondWith(
-    caches.open(CACHE).then((cache) =>
-      cache.match(req).then((hit) => {
-        const net = fetch(req).then((res) => {
-          if (res && res.ok) cache.put(req, res.clone());
-          return res;
-        }).catch(() => hit);
-        return hit || net;
-      })
-    )
-  );
+  const isHTML = req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html');
+
+  e.respondWith((async () => {
+    const cache = await caches.open(CACHE);
+
+    if (isHTML) {
+      const net = fetch(req).then((res) => {
+        if (res && res.ok) cache.put(req, res.clone());
+        return res;
+      }).catch(() => null);
+      const res = await Promise.race([net, timeout(2500)]);
+      if (res) return res;
+      return (await cache.match(req)) || (await cache.match('./index.html')) || net;
+    }
+
+    const hit = await cache.match(req);
+    const net = fetch(req).then((res) => {
+      if (res && res.ok) cache.put(req, res.clone());
+      return res;
+    }).catch(() => hit);
+    return hit || net;
+  })());
 });
