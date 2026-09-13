@@ -124,12 +124,12 @@ function isInPeriod(tx, periodKey, cycleDay) {
 }
 
 /* ---------- API ---------- */
-const callApi = async (url, action, payload = {}) => {
+const callApi = async (url, action, payload = {}, ms = 25000) => {
   if (!url) throw new Error('尚未設定 API 網址');
   const fd = new FormData();
   fd.append('payload', JSON.stringify({ action, ...payload }));
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), 12000);
+  const timer = setTimeout(() => ctl.abort(), ms);
   try {
     const res = await fetch(url, { method: 'POST', body: fd, redirect: 'follow', signal: ctl.signal });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -147,7 +147,22 @@ const apiLoad = async () => {
     const p = bootReq; bootReq = null;
     try { const j = await p; if (j && j.ok && j.data) return j.data; } catch (e) {}
   }
-  return api('load');
+  const url = localStorage.getItem(K_API);
+  try {
+    return await callApi(url, 'load', {}, 20000);
+  } catch (e) {
+    // POST 失敗時改走 GET，行動網路上偶爾只有其中一條通
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 15000);
+    try {
+      const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'action=load',
+                              { method: 'GET', redirect: 'follow', signal: ctl.signal });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || '未知錯誤');
+      return json.data;
+    } finally { clearTimeout(timer); }
+  }
 };
 
 /* ---------- 離線佇列（單線同步，避免重複送出）---------- */
@@ -733,6 +748,7 @@ function App() {
   const [transactions, setTransactions] = useState(() => (cached?.transactions) || []);
   const [openingBalance, setOpeningBalance] = useState(() => cached?.openingBalance || 0);
   const [fundTarget, setFundTarget] = useState(() => Number(cached?.fundTarget) || 50000);
+  const [syncedAt, setSyncedAt] = useState(() => cached?.syncedAt || null);
   const [cycleDay, setCycleDay] = useState(() => Number(cached?.cycleDay || localStorage.getItem(K_CYCLE)) || 1);
   const [hasData, setHasData] = useState(() => !!cached);   // 是否已有可顯示的資料
   const [loadState, setLoadState] = useState('loading');    // loading | ok | error
@@ -768,7 +784,15 @@ function App() {
           const r = await flushQueue();
           if (r.synced) showToast(`已同步 ${r.synced} 筆離線記錄`);
         }
-        const data = await apiLoad();
+        let data = null, lastErr = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try { data = await apiLoad(); lastErr = null; break; }
+          catch (err) {
+            lastErr = err;
+            if (attempt < 1) await new Promise(r => setTimeout(r, 1500));
+          }
+        }
+        if (!data) throw lastErr || new Error('載入失敗');
         const txns = (data.transactions || []).map(t => ({ ...t, date: String(t.date || '').slice(0, 10) }));
         setTransactions(txns);
         setOpeningBalance(Number(data.openingBalance) || 0);
@@ -776,7 +800,9 @@ function App() {
         const cd = Number(data.cycleDay) || 1;
         setCycleDay(cd);
         localStorage.setItem(K_CYCLE, String(cd));
-        localStorage.setItem(K_CACHE, JSON.stringify({ transactions: txns, openingBalance: data.openingBalance, cycleDay: cd, fundTarget: data.fundTarget }));
+        const now = Date.now();
+        setSyncedAt(now);
+        localStorage.setItem(K_CACHE, JSON.stringify({ transactions: txns, openingBalance: data.openingBalance, cycleDay: cd, fundTarget: data.fundTarget, syncedAt: now }));
         setHasData(true); setLoadState('ok');
       } catch (e) {
         setLoadState('error');
@@ -1043,7 +1069,10 @@ function App() {
           </div>`}
         ${loadState === 'error' && html`
           <div class="statusbar err-bar">
-            <span>${hasData ? '後台連線失敗，顯示的是上次同步的資料' : '後台連線失敗，尚未取得資料'}</span>
+            <span>
+              ${hasData ? '後台連線失敗，顯示的是上次同步的資料' : '後台連線失敗，尚未取得資料'}
+              ${syncedAt && html`<div class="mini" style="color:inherit;opacity:.8">上次同步 ${new Date(syncedAt).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>`}
+            </span>
             <button class="retry" onClick=${reload}>重試</button>
           </div>`}
 

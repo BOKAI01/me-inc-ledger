@@ -153,7 +153,9 @@ try{
   var q = localStorage.getItem('meinc_offline_queue');
   if (u && (!q || q === '[]')) {
     var fd = new FormData(); fd.append('payload', '{"action":"load"}');
-    window.__boot = fetch(u, { method:'POST', body:fd, redirect:'follow' })
+    var ctl = new AbortController();
+    setTimeout(function(){ ctl.abort(); }, 25000);
+    window.__boot = fetch(u, { method:'POST', body:fd, redirect:'follow', signal:ctl.signal })
       .then(function(r){ return r.json(); }).catch(function(){ return null; });
   }
 }catch(e){}
