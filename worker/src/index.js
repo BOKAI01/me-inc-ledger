@@ -3,8 +3,8 @@
  *   GET  /health        → ok
  *   POST /line/webhook  → LINE Messaging API webhook
  */
-import { verifySignature, reply, text, confirmCard, categoryQuickReply } from './line.js';
-import { parseEntry, guessCategory } from './parse.js';
+import { verifySignature, reply, text, confirmCard, categoryQuickReply, allocQuickReply } from './line.js';
+import { parseEntry, guessCategory, allocEntry } from './parse.js';
 import { getAccessToken, readHeaderAndIds, appendTxn, GoogleAuthError, SheetAccessError } from './google.js';
 import { computePockets, computeSummary, taipeiToday, catLabel, fmt } from './ledger.js';
 import { Entry, entryCall } from './entry.js';
@@ -17,6 +17,11 @@ const HELP = [
   '・昨天 計程車 250',
   '・10/3 電影 300',
   '・+薪水 50000（開頭 + 代表收入）',
+  '',
+  '💱 撥款（口袋間配置，不算收支）：',
+  '・撥款 緊急 5000（日常 → 緊急備用金）',
+  '・撥款 儲蓄 3000（日常 → 儲蓄口袋）',
+  '・撥回 儲蓄 2000（儲蓄 → 日常）',
   '',
   '其他指令：',
   '・餘額：帳戶總額與三個口袋',
@@ -69,7 +74,7 @@ export async function handleEvent(ev, env, deps = {}) {
     const entry = parseEntry(msg, today);
     if (!entry) return send(text(`看不懂這筆，請用「項目 金額」，例如：午餐 120\n輸入「說明」看更多用法。`));
 
-    const mem = await env.KV.get(`cat:${uid}:${entry.client}`, 'json');
+    const mem = entry.type === 'alloc' ? null : await env.KV.get(`cat:${uid}:${entry.client}`, 'json');
     if (mem && mem.type && mem.category) { entry.type = mem.type; entry.category = mem.category; }
 
     const pid = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
@@ -93,19 +98,25 @@ export async function handleEvent(ev, env, deps = {}) {
     if (a === 'pick') {
       const r = await entryCall(env, pid, 'get');
       if (!r.ok || r.rec.state !== 'pending') return send(text(stateMsg(r.ok ? r.rec.state : 'missing')));
+      if (r.rec.entry.type === 'alloc') return send(text('請選擇撥款方向：', allocQuickReply(pid)));
       return send(text('請選擇分類：', categoryQuickReply(pid, r.rec.entry.type)));
     }
 
-    if (a === 'cat' || a === 'type') {
+    if (a === 'cat' || a === 'type' || a === 'alloc') {
       const g = await entryCall(env, pid, 'get');
       if (!g.ok || g.rec.state !== 'pending') return send(text(stateMsg(g.ok ? g.rec.state : 'missing')));
+      const cur = g.rec.entry;
+      const origClient = cur.origClient || cur.client;
       let patch;
       if (a === 'cat') {
-        const c = p.get('c');
-        patch = { category: c };
+        patch = { category: p.get('c') };
+      } else if (a === 'alloc') {
+        const d = p.get('d') === 'out' ? 'out' : 'in';
+        const k = p.get('k') === 'savings' ? 'savings' : 'emergency';
+        patch = { ...allocEntry(d, k), origClient: cur.type === 'alloc' ? cur.origClient : cur.client };
       } else {
         const t = p.get('t') === 'inflow' ? 'inflow' : 'outflow';
-        patch = { type: t, category: guessCategory(g.rec.entry.client, t) };
+        patch = { type: t, client: origClient, account: '', category: guessCategory(origClient, t) };
       }
       const r = await entryCall(env, pid, 'update', patch);
       if (!r.ok) return send(text(stateMsg(r.reason)));
@@ -137,7 +148,7 @@ async function confirmWrite(env, pid, uid, fetchImpl) {
       await appendTxn(token, rec.sheetId, header, {
         id: rec.txnId, type: e.type, category: e.category, date: e.date, amount: e.amount,
         client: e.client, description: '', paymentTerm: 0, received: true,
-        createdAt: new Date().toISOString(), account: '',
+        createdAt: new Date().toISOString(), account: e.account || '',
       }, fetchImpl);
     }
   } catch (err) {
@@ -149,8 +160,8 @@ async function confirmWrite(env, pid, uid, fetchImpl) {
   }
   await entryCall(env, pid, 'finish');
 
-  // 記住使用者改過的分類
-  try {
+  // 記住使用者改過的分類（撥款不記）
+  if (e.type !== 'alloc') try {
     const key = `cat:${uid}:${e.client}`;
     const guessType = parseEntry(`${e.client} 1`, '2000-01-01')?.type || 'outflow';
     const changed = e.type !== guessType || e.category !== guessCategory(e.client, e.type);
@@ -159,8 +170,9 @@ async function confirmWrite(env, pid, uid, fetchImpl) {
   } catch (err) { console.error('memory failed', err); }
 
   const cache = await clearLegacyCache(env, fetchImpl);
-  const sign = e.type === 'inflow' ? '+' : '-';
-  return `✅ 已寫入【${rec.ledgerName}】\n${e.client} ${sign}$${fmt(e.amount)}\n${catLabel(e.type, e.category)}・${e.date}`
+  const sign = e.type === 'inflow' ? '+' : e.type === 'alloc' ? '' : '-';
+  const label = e.type === 'alloc' ? '撥款' : e.client;
+  return `✅ 已寫入【${rec.ledgerName}】\n${label} ${sign}$${fmt(e.amount)}\n${catLabel(e.type, e.category, e.account)}・${e.date}`
     + (cache ? '' : '\n（網站快取未清除，若網站沒看到，請在網站設定頁重新整理）');
 }
 

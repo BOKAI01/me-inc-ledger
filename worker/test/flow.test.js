@@ -71,7 +71,7 @@ test('改分類、改成收入，並記住選擇', async () => {
   await s.say('咖啡豆 450');
   let pid = s.pidOf(s.lastCard());
   await s.tap(`a=pick&p=${pid}`);
-  assert.equal(s.world.replies.at(-1).messages[0].quickReply.items.length, 7);
+  assert.equal(s.world.replies.at(-1).messages[0].quickReply.items.length, 8);
   await s.tap(`a=cat&p=${pid}&c=leisure`);
   await s.tap(`a=ok&p=${pid}`);
   assert.equal(s.world.rows[0][2], 'leisure');
@@ -149,4 +149,39 @@ test('看不懂的訊息與說明', async () => {
   assert.match(s.world.lastText(), /看不懂/);
   await s.say('說明');
   assert.match(s.world.lastText(), /記帳方式/);
+});
+
+test('撥款：卡片 → 寫入 alloc 分錄，餘額只移動口袋', async () => {
+  const s = setup({ rows: [['1', 'inflow', 'salary', '2026-10-05', 50000, '薪水', '', 0, true, '', '']] });
+  await s.say('撥款 儲蓄 5000');
+  const card = s.lastCard();
+  assert.equal(card.contents.header.contents[0].text, '確認撥款');
+  const pid = s.pidOf(card);
+  await s.tap(`a=ok&p=${pid}`);
+  const row = Object.fromEntries(HEADER.map((h, i) => [h, s.world.rows[1][i]]));
+  assert.equal(row.type, 'alloc'); assert.equal(row.category, 'alloc_in'); assert.equal(row.account, 'savings');
+  assert.match(s.world.lastText(), /日常 → 🏦 儲蓄口袋/);
+  await s.say('餘額');
+  assert.match(s.world.lastText(), /帳戶總額 \$50,000/);
+  assert.match(s.world.lastText(), /儲蓄口袋 \$5,000/);
+  assert.match(s.world.lastText(), /日常口袋 \$45,000/);
+});
+
+test('撥款：改方向、支出改成撥款再改回', async () => {
+  const s = setup();
+  await s.say('撥款 緊急 2000');
+  let pid = s.pidOf(s.lastCard());
+  await s.tap(`a=pick&p=${pid}`);
+  assert.equal(s.world.replies.at(-1).messages[0].quickReply.items.length, 5);
+  await s.tap(`a=alloc&p=${pid}&d=out&k=savings`);
+  await s.tap(`a=ok&p=${pid}`);
+  assert.equal(s.world.rows[0][2], 'alloc_out'); assert.equal(s.world.rows[0][10], 'savings');
+
+  await s.say('存起來 1000');
+  pid = s.pidOf(s.lastCard());
+  await s.tap(`a=alloc&p=${pid}&d=in&k=emergency`);
+  await s.tap(`a=type&p=${pid}&t=outflow`);
+  await s.tap(`a=ok&p=${pid}`);
+  const r = s.world.rows[1];
+  assert.equal(r[1], 'outflow'); assert.equal(r[5], '存起來'); assert.equal(r[10], '');
 });

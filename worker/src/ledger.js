@@ -19,7 +19,12 @@ export const DEPARTMENTS = [
 
 export const findDept = (id) => DEPARTMENTS.find(d => d.id === id) || DEPARTMENTS[5];
 export const findIncome = (id) => INCOME_CATS.find(c => c.id === id) || INCOME_CATS[4];
-export const catLabel = (type, cat) => {
+export const allocLabel = (category, account) => {
+  const p = account === 'savings' ? '🏦 儲蓄口袋' : '🛟 緊急備用金';
+  return category === 'alloc_out' ? `${p} → 👛 日常` : `👛 日常 → ${p}`;
+};
+export const catLabel = (type, cat, account) => {
+  if (type === 'alloc') return allocLabel(cat, account);
   const c = type === 'inflow' ? findIncome(cat) : findDept(cat);
   return `${c.emoji} ${type === 'inflow' ? c.name : c.fullName}`;
 };

@@ -24,7 +24,34 @@ export function guessCategory(item, type) {
   return type === 'inflow' ? 'other_in' : 'other_out';
 }
 
-const toHalfWidth = (s) => s
+export const POCKET_NAMES = { savings: '儲蓄口袋', emergency: '緊急備用金' };
+
+export function allocEntry(dir, pocket) {
+  const name = POCKET_NAMES[pocket];
+  return {
+    type: 'alloc',
+    category: dir === 'out' ? 'alloc_out' : 'alloc_in',
+    account: pocket,
+    client: dir === 'out' ? `${name}撥回日常` : `撥入${name}`,
+  };
+}
+
+/**
+ * 「撥款 緊急 5000」「撥款 儲蓄 3000」→ 日常 → 口袋
+ * 「撥回 儲蓄 2000」「撥款 緊急→日常 2000」→ 口袋 → 日常
+ * 沒寫口袋時與網站相同，預設緊急備用金
+ */
+function parseAlloc(head) {
+  const m = head.match(/^(撥款|撥入|轉入|存入|撥回|轉回|提領|動用)\s*(.*)$/);
+  if (!m) return null;
+  const rest = m[2];
+  let dir = /^(撥回|轉回|提領|動用)$/.test(m[1]) ? 'out' : 'in';
+  if (/(→|->|到|回|至)\s*日常/.test(rest)) dir = 'out';
+  const pocket = /儲蓄|存款/.test(rest) ? 'savings' : 'emergency';
+  return allocEntry(dir, pocket);
+}
+
+const toHalfWidth =(s) => s
   .replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
   .replace(/　/g, ' ');
 
@@ -59,6 +86,11 @@ export function parseEntry(raw, today) {
   if (!am || /-\s*$/.test(s.slice(0, am.index))) return null;   // 負數不收
   const amount = Number(am[1].replace(/,/g, ''));
   if (!(amount > 0) || amount > 100000000) return null;
+
+  // 撥款：口袋之間的配置，不是收入也不是支出
+  const alloc = !forceIncome && parseAlloc(s.slice(0, am.index).trim());
+  if (alloc) return { ...alloc, amount, date };
+
   const client = s.slice(0, am.index).trim();
   if (!client || /^\d+$/.test(client)) return null;
 

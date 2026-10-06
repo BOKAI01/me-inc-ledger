@@ -80,3 +80,27 @@ test('line: 簽章驗證', async () => {
   assert.equal(await verifySignature('sec', body, null), false);
   assert.equal(await verifySignature('', body, sig), false);
 });
+
+test('parse: 撥款', () => {
+  const a = parseEntry('撥款 緊急 5000', T);
+  assert.deepEqual(a, { type: 'alloc', category: 'alloc_in', account: 'emergency', client: '撥入緊急備用金', amount: 5000, date: T });
+  assert.equal(parseEntry('撥款 儲蓄 3000', T).account, 'savings');
+  assert.equal(parseEntry('撥款 3000', T).account, 'emergency');            // 同網站預設
+  const b = parseEntry('撥回 儲蓄 2000', T);
+  assert.equal(b.category, 'alloc_out'); assert.equal(b.account, 'savings');
+  assert.equal(parseEntry('撥款 緊急→日常 1000', T).category, 'alloc_out');
+  assert.equal(parseEntry('撥款 日常→儲蓄 1000', T).category, 'alloc_in');
+  assert.equal(parseEntry('昨天 撥款 儲蓄 500', T).date, '2026-10-05');
+});
+
+test('ledger: 撥款不影響總額、只移動口袋', () => {
+  const tx = [
+    { type: 'inflow', category: 'salary', amount: 10000, date: T, account: '' },
+    { type: 'alloc', category: 'alloc_in', amount: 3000, date: T, account: 'savings' },
+    { type: 'alloc', category: 'alloc_out', amount: 1000, date: T, account: 'savings' },
+  ];
+  const p = computePockets(tx, 0);
+  assert.equal(p.total, 10000); assert.equal(p.savings, 2000); assert.equal(p.daily, 8000);
+  const s = computeSummary(tx, 1, T);
+  assert.equal(s.inc, 10000); assert.equal(s.exp, 0);
+});

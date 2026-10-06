@@ -44,39 +44,64 @@ const btn = (label, data, style = 'secondary') => ({
 /** 確認卡片 */
 export function confirmCard(pid, e, ledgerName) {
   const isIn = e.type === 'inflow';
+  const isAlloc = e.type === 'alloc';
+  const title = isAlloc ? '確認撥款' : isIn ? '確認收入' : '確認支出';
+  const color = isAlloc ? '#A87B3D' : isIn ? '#5B8C5A' : '#1F3A2E';
+  const sign = isAlloc ? '' : isIn ? '+' : '-';
+  const rows = isAlloc
+    ? [
+        row('方向', catLabel(e.type, e.category, e.account)),
+        row('說明', '口袋間配置，帳戶總額不變，不算收入或支出'),
+        row('日期', e.date),
+        row('帳本', ledgerName || '主帳本'),
+      ]
+    : [
+        row('項目', e.client),
+        row('分類', catLabel(e.type, e.category)),
+        row('日期', e.date),
+        row('帳本', ledgerName || '主帳本'),
+      ];
   return {
     type: 'flex',
-    altText: `確認記帳：${e.client} $${fmt(e.amount)}`,
+    altText: `${title}：${e.client} $${fmt(e.amount)}`,
     contents: {
       type: 'bubble', size: 'kilo',
       header: {
-        type: 'box', layout: 'vertical', backgroundColor: isIn ? '#5B8C5A' : '#1F3A2E', paddingAll: '14px',
+        type: 'box', layout: 'vertical', backgroundColor: color, paddingAll: '14px',
         contents: [
-          { type: 'text', text: isIn ? '確認收入' : '確認支出', color: '#FFFFFF', size: 'sm' },
-          { type: 'text', text: `${isIn ? '+' : '-'}$${fmt(e.amount)}`, color: '#FFFFFF', size: 'xxl', weight: 'bold' },
+          { type: 'text', text: title, color: '#FFFFFF', size: 'sm' },
+          { type: 'text', text: `${sign}$${fmt(e.amount)}`, color: '#FFFFFF', size: 'xxl', weight: 'bold' },
         ],
       },
-      body: {
-        type: 'box', layout: 'vertical', spacing: 'sm',
-        contents: [
-          row('項目', e.client),
-          row('分類', catLabel(e.type, e.category)),
-          row('日期', e.date),
-          row('帳本', ledgerName || '主帳本'),
-        ],
-      },
+      body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: rows },
       footer: {
         type: 'box', layout: 'vertical', spacing: 'sm',
         contents: [
           btn('確認寫入', `a=ok&p=${pid}`, 'primary'),
           {
             type: 'box', layout: 'horizontal', spacing: 'sm',
-            contents: [btn('改分類', `a=pick&p=${pid}`), btn('取消', `a=no&p=${pid}`)],
+            contents: [btn(isAlloc ? '改方向' : '改分類', `a=pick&p=${pid}`), btn('取消', `a=no&p=${pid}`)],
           },
         ],
       },
     },
   };
+}
+
+/** 撥款方向的快速選單 */
+export function allocQuickReply(pid) {
+  const opts = [
+    ['in', 'emergency', '👛→🛟 撥入緊急備用金'],
+    ['in', 'savings', '👛→🏦 撥入儲蓄口袋'],
+    ['out', 'emergency', '🛟→👛 緊急撥回日常'],
+    ['out', 'savings', '🏦→👛 儲蓄撥回日常'],
+  ];
+  const items = opts.map(([d, k, label]) => ({
+    type: 'action',
+    action: { type: 'postback', label: label.slice(0, 20), data: `a=alloc&p=${pid}&d=${d}&k=${k}`, displayText: label },
+  }));
+  items.push({ type: 'action', action: { type: 'postback', label: '↔ 改成支出', data: `a=type&p=${pid}&t=outflow`, displayText: '改成支出' } });
+  return { items };
 }
 
 /** 改分類的快速選單 */
@@ -96,6 +121,10 @@ export function categoryQuickReply(pid, type) {
       data: `a=type&p=${pid}&t=${type === 'inflow' ? 'outflow' : 'inflow'}`,
       displayText: type === 'inflow' ? '改成支出' : '改成收入',
     },
+  });
+  items.push({
+    type: 'action',
+    action: { type: 'postback', label: '↪ 改成撥款', data: `a=alloc&p=${pid}&d=in&k=emergency`, displayText: '改成撥款' },
   });
   return { items };
 }
