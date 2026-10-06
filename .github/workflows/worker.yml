@@ -1,0 +1,38 @@
+name: LINE Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/**'
+      - '.github/workflows/worker.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: line-worker
+  cancel-in-progress: false
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 測試
+        run: npm test
+
+      - name: 部署到 Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: worker
+          wranglerVersion: '4'
+          command: deploy
