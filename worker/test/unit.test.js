@@ -104,3 +104,11 @@ test('ledger: 撥款不影響總額、只移動口袋', () => {
   const s = computeSummary(tx, 1, T);
   assert.equal(s.inc, 10000); assert.equal(s.exp, 0);
 });
+
+import { normDate } from '../src/google.js';
+test('google: 日期正規化與 Apps Script 一致', () => {
+  assert.equal(normDate(46156), '2026-05-14');                    // 日期儲存格序號
+  assert.equal(normDate('2026-05-16T16:00:00.000Z'), '2026-05-16'); // 舊資料字串取前 10 碼
+  assert.equal(normDate('2026/5/4'), '2026-05-04');
+  assert.equal(normDate('2026-10-07'), '2026-10-07');
+});

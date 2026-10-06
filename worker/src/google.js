@@ -84,6 +84,48 @@ export async function readHeaderAndIds(token, sheetId, fetchImpl = fetch) {
   return { header, ids };
 }
 
+/* 試算表日期序號（1899-12-30 起算的天數）→ yyyy-MM-dd */
+function serialToDate(n) {
+  const d = new Date(Math.round((Number(n) - 25569) * 86400000));
+  return d.toISOString().slice(0, 10);
+}
+/** 日期欄正規化：與 Apps Script load 相同，字串取前 10 碼，日期儲存格轉 yyyy-MM-dd */
+export function normDate(v) {
+  if (typeof v === 'number') return serialToDate(v);
+  const s = String(v ?? '').trim();
+  const m = s.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  return s.slice(0, 10);
+}
+
+/** 直接讀整本帳（交易＋設定），取代 Apps Script 的 load */
+export async function readLedger(token, sheetId, fetchImpl = fetch) {
+  const set = encodeURIComponent(`'Settings'!A:B`);
+  const j = await sheetsFetch(token,
+    `/${sheetId}/values:batchGet?ranges=${rng('A:Z')}&ranges=${set}`
+    + `&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`, {}, fetchImpl);
+  const rows = j.valueRanges?.[0]?.values || [];
+  const header = (rows[0] || []).map(String);
+  const transactions = rows.slice(1)
+    .filter(r => r.some(c => c !== '' && c != null))
+    .map(r => {
+      const t = Object.fromEntries(header.map((h, i) => [h, r[i] ?? '']));
+      t.id = String(t.id ?? '');
+      t.date = normDate(t.date);
+      t.amount = Number(String(t.amount).replace(/,/g, '')) || 0;
+      t.account = String(t.account ?? '');
+      return t;
+    });
+  const settings = {};
+  for (const r of (j.valueRanges?.[1]?.values || []).slice(1)) if (r[0]) settings[String(r[0])] = r[1];
+  return {
+    transactions,
+    openingBalance: Number(settings.openingBalance) || 0,
+    cycleDay: Number(settings.cycleDay) || 1,
+    fundTarget: Number(settings.fundTarget) || 50000,
+  };
+}
+
 /** 依標題順序附加多列（一次 API 呼叫） */
 export async function appendTxns(token, sheetId, header, txns, fetchImpl = fetch) {
   if (!header.length || header[0] !== 'id') throw new Error('Transactions 工作表標題列不符');

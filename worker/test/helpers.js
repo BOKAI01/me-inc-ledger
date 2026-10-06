@@ -58,6 +58,11 @@ export function fakeWorld({ rows = [], settings = { openingBalance: 0, cycleDay:
     if (u.startsWith('https://oauth2.googleapis.com/token')) return Response.json({ access_token: 'tok', expires_in: 3600 });
     if (u.startsWith('https://sheets.googleapis.com/')) {
       if (sheetStatus !== 200) return new Response('no', { status: sheetStatus });
+      if (u.includes(':batchGet') && decodeURIComponent(u).includes("'Settings'")) {
+        w.ledgerReads = (w.ledgerReads || 0) + 1;
+        const set = [['key', 'value'], ...Object.entries(settings).map(([k, v]) => [k, v])];
+        return Response.json({ valueRanges: [{ values: [HEADER, ...w.rows] }, { values: set }] });
+      }
       if (u.includes(':batchGet')) {
         return Response.json({ valueRanges: [{ values: [HEADER] }, { values: [['id'], ...w.rows.map(r => [r[0]])] }] });
       }

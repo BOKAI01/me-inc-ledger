@@ -5,7 +5,7 @@
  */
 import { verifySignature, reply, text, confirmCard, batchCard, categoryQuickReply, allocQuickReply } from './line.js';
 import { parseEntry, parseDateOnly, guessCategory, allocEntry } from './parse.js';
-import { getAccessToken, readHeaderAndIds, appendTxns, GoogleAuthError, SheetAccessError } from './google.js';
+import { getAccessToken, readHeaderAndIds, readLedger, appendTxns, GoogleAuthError, SheetAccessError } from './google.js';
 import { computePockets, computeSummary, taipeiToday, catLabel, fmt } from './ledger.js';
 import { Entry, entryCall } from './entry.js';
 
@@ -71,8 +71,8 @@ export async function handleEvent(ev, env, deps = {}) {
 
   if (ev.type === 'message' && ev.message?.type === 'text') {
     const msg = ev.message.text.trim();
-    if (/^(餘額|余額|結餘)$/.test(msg)) return send(text(await balanceText(env, fetchImpl)));
-    if (/^(摘要|本期|本月)$/.test(msg)) return send(text(await summaryText(env, today, fetchImpl)));
+    if (/^(餘額|余額|結餘)$/.test(msg)) return send(text(await balanceText(env, bind.sheetId, fetchImpl)));
+    if (/^(摘要|本期|本月)$/.test(msg)) return send(text(await summaryText(env, bind.sheetId, today, fetchImpl)));
     if (/^(說明|幫助|help|\?|？)$/i.test(msg)) return send(text(HELP));
     if (/^調整/.test(msg)) return send(text('「調整」類型要等網站改版後才開放，目前請在網站上操作。'));
 
@@ -104,7 +104,12 @@ export async function handleEvent(ev, env, deps = {}) {
     const i = Number(p.get('i')) || 0;
     if (!pid || !/^[0-9a-f]{16}$/.test(pid)) return;
 
-    if (a === 'ok') return send(text(await confirmWrite(env, pid, uid, fetchImpl)));
+    if (a === 'ok') {
+      const r = await confirmWrite(env, pid, uid, fetchImpl);
+      await send(text(r.msg));
+      if (r.wrote) await clearLegacyCache(env, fetchImpl);   // 先回覆，再清網站快取（Apps Script 可能較慢）
+      return;
+    }
 
     if (a === 'no') {
       const r = await entryCall(env, pid, 'cancel');
@@ -176,9 +181,9 @@ function stateMsg(reason) {
 
 async function confirmWrite(env, pid, uid, fetchImpl) {
   const r = await entryCall(env, pid, 'acquire');
-  if (!r.ok) return stateMsg(r.reason);
+  if (!r.ok) return { msg: stateMsg(r.reason) };
   const rec = r.rec;
-  if (rec.uid !== uid) { await entryCall(env, pid, 'release'); return '這張卡片不是你的。'; }
+  if (rec.uid !== uid) { await entryCall(env, pid, 'release'); return { msg: '這張卡片不是你的。' }; }
   const items = rec.items;
 
   try {
@@ -195,9 +200,7 @@ async function confirmWrite(env, pid, uid, fetchImpl) {
   } catch (err) {
     await entryCall(env, pid, 'release');
     console.error('write failed', err);
-    if (err instanceof SheetAccessError) return '❌ 無法存取試算表：請確認已共用給服務帳戶，且權限為編輯者。可再按一次「確認寫入」重試。';
-    if (err instanceof GoogleAuthError) return `❌ Google 授權失敗：${err.message}。請檢查 GOOGLE_SA_JSON。`;
-    return '❌ 寫入失敗，請稍後再按一次「確認寫入」。';
+    return { msg: writeErrMsg(err) };
   }
   await entryCall(env, pid, 'finish');
 
@@ -213,7 +216,6 @@ async function confirmWrite(env, pid, uid, fetchImpl) {
     } catch (err) { console.error('memory failed', err); }
   }
 
-  const cache = await clearLegacyCache(env, fetchImpl);
   const line = (e) => {
     const sign = e.type === 'inflow' ? '+' : e.type === 'alloc' ? '' : '-';
     const label = e.type === 'alloc' ? '撥款' : e.client;
@@ -229,7 +231,13 @@ async function confirmWrite(env, pid, uid, fetchImpl) {
       return `${e.date.slice(5).replace('-', '/')} ${l.label} ${l.sign}$${fmt(e.amount)}`;
     }).join('\n');
   }
-  return body + (cache ? '' : '\n（網站快取未清除，若網站沒看到，請在網站設定頁重新整理）');
+  return { msg: body, wrote: true };
+}
+
+function writeErrMsg(err) {
+  if (err instanceof SheetAccessError) return '❌ 無法存取試算表：請確認已共用給服務帳戶，且權限為編輯者。可再按一次「確認寫入」重試。';
+  if (err instanceof GoogleAuthError) return `❌ Google 授權失敗：${err.message}。請檢查 GOOGLE_SA_JSON。`;
+  return '❌ 寫入失敗，請稍後再按一次「確認寫入」。';
 }
 
 /* ---------- 舊後端（Apps Script） ---------- */
@@ -253,23 +261,18 @@ async function gasCall(env, action, fetchImpl, ms = 20000) {
 }
 
 async function clearLegacyCache(env, fetchImpl) {
-  try { await gasCall(env, 'clearCache', fetchImpl, 10000); return true; }
+  try { await gasCall(env, 'clearCache', fetchImpl, 25000); return true; }
   catch (err) { console.error('clearCache failed', err); return false; }
 }
 
-async function loadLedger(env, fetchImpl) {
-  const d = await gasCall(env, 'load', fetchImpl);
-  return {
-    transactions: (d.transactions || []).map(t => ({ ...t, date: String(t.date || '').slice(0, 10) })),
-    openingBalance: Number(d.openingBalance) || 0,
-    cycleDay: Number(d.cycleDay) || 1,
-    fundTarget: Number(d.fundTarget) || 50000,
-  };
+async function loadLedger(env, sheetId, fetchImpl) {
+  const token = await getAccessToken(env.GOOGLE_SA_JSON, fetchImpl);
+  return readLedger(token, sheetId, fetchImpl);
 }
 
-async function balanceText(env, fetchImpl) {
+async function balanceText(env, sheetId, fetchImpl) {
   try {
-    const d = await loadLedger(env, fetchImpl);
+    const d = await loadLedger(env, sheetId, fetchImpl);
     const p = computePockets(d.transactions, d.openingBalance);
     const gap = d.fundTarget - p.emergency;
     return [
@@ -285,9 +288,9 @@ async function balanceText(env, fetchImpl) {
   }
 }
 
-async function summaryText(env, today, fetchImpl) {
+async function summaryText(env, sheetId, today, fetchImpl) {
   try {
-    const d = await loadLedger(env, fetchImpl);
+    const d = await loadLedger(env, sheetId, fetchImpl);
     const s = computeSummary(d.transactions, d.cycleDay, today);
     const lines = [
       `📊 本期 ${s.label}`,
