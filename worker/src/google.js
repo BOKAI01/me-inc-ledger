@@ -98,7 +98,15 @@ export function normDate(v) {
   return s.slice(0, 10);
 }
 
-/** 直接讀整本帳（交易＋設定），取代 Apps Script 的 load */
+/** 日期時間儲存格序號 → ISO（試算表時區預設台北 +8） */
+function serialToIso(n, tzOffsetMin = 480) {
+  return new Date(Math.round((Number(n) - 25569) * 86400000) - tzOffsetMin * 60000).toISOString();
+}
+
+/**
+ * 直接讀整本帳（交易＋設定），取代 Apps Script 的 load
+ * 每筆交易附 _row（試算表列號，1 起算），供修改／刪除使用
+ */
 export async function readLedger(token, sheetId, fetchImpl = fetch) {
   const set = encodeURIComponent(`'Settings'!A:B`);
   const j = await sheetsFetch(token,
@@ -106,24 +114,78 @@ export async function readLedger(token, sheetId, fetchImpl = fetch) {
     + `&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`, {}, fetchImpl);
   const rows = j.valueRanges?.[0]?.values || [];
   const header = (rows[0] || []).map(String);
-  const transactions = rows.slice(1)
-    .filter(r => r.some(c => c !== '' && c != null))
-    .map(r => {
-      const t = Object.fromEntries(header.map((h, i) => [h, r[i] ?? '']));
-      t.id = String(t.id ?? '');
-      t.date = normDate(t.date);
-      t.amount = Number(String(t.amount).replace(/,/g, '')) || 0;
-      t.account = String(t.account ?? '');
-      return t;
-    });
-  const settings = {};
-  for (const r of (j.valueRanges?.[1]?.values || []).slice(1)) if (r[0]) settings[String(r[0])] = r[1];
+  const transactions = [];
+  rows.forEach((r, idx) => {
+    if (idx === 0 || !r.some(c => c !== '' && c != null)) return;
+    const t = Object.fromEntries(header.map((h, i) => [h, r[i] ?? '']));
+    t.id = String(t.id ?? '');
+    t.date = normDate(t.date);
+    t.amount = Number(String(t.amount).replace(/,/g, '')) || 0;
+    t.account = String(t.account ?? '');
+    if (typeof t.createdAt === 'number') t.createdAt = serialToIso(t.createdAt);
+    if (header.includes('received')) t.received = t.received === true || String(t.received).toUpperCase() === 'TRUE';
+    if (header.includes('paymentTerm')) t.paymentTerm = Number(t.paymentTerm) || 0;
+    Object.defineProperty(t, '_row', { value: idx + 1, enumerable: false });
+    transactions.push(t);
+  });
+  const settings = {}, settingRows = {};
+  (j.valueRanges?.[1]?.values || []).forEach((r, idx) => {
+    if (idx === 0 || !r[0]) return;
+    settings[String(r[0])] = r[1];
+    settingRows[String(r[0])] = idx + 1;
+  });
   return {
+    header,
     transactions,
+    settings,
+    settingRows,
     openingBalance: Number(settings.openingBalance) || 0,
     cycleDay: Number(settings.cycleDay) || 1,
     fundTarget: Number(settings.fundTarget) || 50000,
   };
+}
+
+/** 一次寫入多個儲存格：[{ a1: "'Transactions'!C5", value }] */
+export async function writeCells(token, sheetId, cells, fetchImpl = fetch) {
+  if (!cells.length) return null;
+  return sheetsFetch(token, `/${sheetId}/values:batchUpdate`, {
+    method: 'POST',
+    body: JSON.stringify({ valueInputOption: 'RAW', data: cells.map(c => ({ range: c.a1, values: [[c.value]] })) }),
+  }, fetchImpl);
+}
+
+/** 附加一列到任意工作表 */
+export async function appendRow(token, sheetId, sheetName, row, fetchImpl = fetch) {
+  return sheetsFetch(token,
+    `/${sheetId}/values/${encodeURIComponent(`'${sheetName}'!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+    { method: 'POST', body: JSON.stringify({ values: [row] }) }, fetchImpl);
+}
+
+/** 取得工作表的數字 id（刪除列需要） */
+const gidCache = new Map();
+export async function sheetGid(token, sheetId, title, fetchImpl = fetch) {
+  const k = `${sheetId}/${title}`;
+  if (gidCache.has(k)) return gidCache.get(k);
+  const j = await sheetsFetch(token, `/${sheetId}?fields=sheets.properties(sheetId,title)`, {}, fetchImpl);
+  for (const sh of j.sheets || []) gidCache.set(`${sheetId}/${sh.properties.title}`, sh.properties.sheetId);
+  if (!gidCache.has(k)) throw new Error(`找不到工作表 ${title}`);
+  return gidCache.get(k);
+}
+
+/** 刪除指定列（1 起算） */
+export async function deleteRow(token, sheetId, title, rowNumber, fetchImpl = fetch) {
+  const gid = await sheetGid(token, sheetId, title, fetchImpl);
+  return sheetsFetch(token, `/${sheetId}:batchUpdate`, {
+    method: 'POST',
+    body: JSON.stringify({ requests: [{ deleteDimension: { range: { sheetId: gid, dimension: 'ROWS', startIndex: rowNumber - 1, endIndex: rowNumber } } }] }),
+  }, fetchImpl);
+}
+
+/** 欄號（0 起算）→ A1 欄名 */
+export function colName(i) {
+  let s = '';
+  for (let n = i + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
+  return s;
 }
 
 /** 依標題順序附加多列（一次 API 呼叫） */

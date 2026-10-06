@@ -224,7 +224,7 @@ function SetupScreen({ onSaved }) {
     setError(''); setTesting(true);
     try {
       const u = url.trim();
-      if (!u.startsWith('https://script.google.com/')) throw new Error('網址格式不正確');
+      if (!/^https:\/\/(script\.google\.com\/|[\w.-]+\.workers\.dev\/api\?key=)/.test(u)) throw new Error('網址格式不正確');
       await callApi(u, 'load');
       localStorage.setItem(K_API, u);
       onSaved(u);
@@ -252,7 +252,7 @@ function SetupScreen({ onSaved }) {
             <li>複製網址貼到下方</li>
           </ol>
           <input class="inp mono" type="text" value=${url} onInput=${e => setUrl(e.target.value)}
-                 placeholder="https://script.google.com/macros/s/.../exec" style="font-size:12px" />
+                 placeholder="https://….workers.dev/api?key=… 或 Apps Script /exec 網址" style="font-size:12px" />
           ${error && html`<div class="err">${error}</div>`}
           <button class="btn btn-p" disabled=${testing || !url.trim()} onClick=${test}>
             ${testing ? '測試連線中⋯' : '開始營運'}

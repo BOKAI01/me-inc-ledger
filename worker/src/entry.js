@@ -71,6 +71,17 @@ export class Entry {
         await s.put('rec', rec);
         return { ok: true, rec };
       }
+      case 'lock': {                                     // 試算表寫入鎖（租約制，逾時自動失效）
+        const l = await s.get('lock');
+        if (l && l.until > Date.now() && l.owner !== data.owner) return { ok: false };
+        await s.put('lock', { owner: data.owner, until: Date.now() + (data.ttl || 20000) });
+        return { ok: true };
+      }
+      case 'unlock': {
+        const l = await s.get('lock');
+        if (l && l.owner === data.owner) await s.delete('lock');
+        return { ok: true };
+      }
       default:
         return { ok: false, reason: 'bad-op' };
     }

@@ -1,8 +1,8 @@
-/* Me, Inc. — Service Worker v7
+/* Me, Inc. — Service Worker v8
    HTML：網路優先（2.5 秒逾時就退回快取）→ 改版後一開就是新版
    程式與圖示：快取優先 + 背景更新 → 秒開
    後台 API：完全不攔截 */
-const CACHE = 'meinc-v7';
+const CACHE = 'meinc-v8';
 const ASSETS = [
   './',
   './index.html',

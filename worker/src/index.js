@@ -8,6 +8,7 @@ import { parseEntry, parseDateOnly, guessCategory, allocEntry } from './parse.js
 import { getAccessToken, readHeaderAndIds, readLedger, appendTxns, GoogleAuthError, SheetAccessError } from './google.js';
 import { computePockets, computeSummary, taipeiToday, catLabel, fmt } from './ledger.js';
 import { Entry, entryCall } from './entry.js';
+import { handleApi } from './api.js';
 
 export { Entry };
 
@@ -38,6 +39,7 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === '/health') return new Response('ok', { headers: { 'Content-Type': 'text/plain' } });
     if (url.pathname === '/line/webhook' && request.method === 'POST') return webhook(request, env, ctx);
+    if (url.pathname === '/api') return handleApi(request, env, ctx);
     return new Response('Not found', { status: 404 });
   },
 };

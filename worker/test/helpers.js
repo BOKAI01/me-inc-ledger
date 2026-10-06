@@ -25,6 +25,7 @@ export function fakeEntryNS() {
           async put(k, v) { store.set(k, structuredClone(v)); },
           async setAlarm() {},
           async deleteAll() { store.clear(); },
+          async delete(k) { store.delete(k); },
         };
         inst.set(id, { obj: new Entry({ storage }, {}), q: Promise.resolve() });
       }
