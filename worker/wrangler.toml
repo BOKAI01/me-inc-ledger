@@ -1,0 +1,23 @@
+name = "me-inc-line-bot"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+# 機密值（LINE_CHANNEL_SECRET、LINE_CHANNEL_ACCESS_TOKEN、GOOGLE_SA_JSON、LEGACY_GAS_URL）
+# 一律在 Cloudflare 後台設為 Secret，不寫在這裡。部署不會清掉 Secret。
+
+[observability]
+enabled = true
+
+[[kv_namespaces]]
+binding = "KV"
+id = "9f064350e03b4022846261ce3eec3959"
+
+# 每張確認卡片一個 Durable Object：保存待確認內容，並確保連按只寫入一次
+[[durable_objects.bindings]]
+name = "ENTRY"
+class_name = "Entry"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Entry"]
