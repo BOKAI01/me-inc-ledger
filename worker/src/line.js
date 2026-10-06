@@ -89,7 +89,7 @@ export function confirmCard(pid, e, ledgerName) {
 }
 
 /** 撥款方向的快速選單 */
-export function allocQuickReply(pid) {
+export function allocQuickReply(pid, i = 0) {
   const opts = [
     ['in', 'emergency', '👛→🛟 撥入緊急備用金'],
     ['in', 'savings', '👛→🏦 撥入儲蓄口袋'],
@@ -98,33 +98,88 @@ export function allocQuickReply(pid) {
   ];
   const items = opts.map(([d, k, label]) => ({
     type: 'action',
-    action: { type: 'postback', label: label.slice(0, 20), data: `a=alloc&p=${pid}&d=${d}&k=${k}`, displayText: label },
+    action: { type: 'postback', label: label.slice(0, 20), data: `a=alloc&p=${pid}&i=${i}&d=${d}&k=${k}`, displayText: label },
   }));
-  items.push({ type: 'action', action: { type: 'postback', label: '↔ 改成支出', data: `a=type&p=${pid}&t=outflow`, displayText: '改成支出' } });
+  items.push({ type: 'action', action: { type: 'postback', label: '↔ 改成支出', data: `a=type&p=${pid}&i=${i}&t=outflow`, displayText: '改成支出' } });
   return { items };
 }
 
 /** 改分類的快速選單 */
-export function categoryQuickReply(pid, type) {
+export function categoryQuickReply(pid, type, i = 0) {
   const cats = type === 'inflow'
     ? INCOME_CATS.map(c => ({ id: c.id, label: `${c.emoji} ${c.name}` }))
     : DEPARTMENTS.map(d => ({ id: d.id, label: `${d.emoji} ${d.fullName}` }));
   const items = cats.map(c => ({
     type: 'action',
-    action: { type: 'postback', label: c.label.slice(0, 20), data: `a=cat&p=${pid}&c=${c.id}`, displayText: c.label },
+    action: { type: 'postback', label: c.label.slice(0, 20), data: `a=cat&p=${pid}&i=${i}&c=${c.id}`, displayText: c.label },
   }));
   items.push({
     type: 'action',
     action: {
       type: 'postback',
       label: type === 'inflow' ? '↔ 改成支出' : '↔ 改成收入',
-      data: `a=type&p=${pid}&t=${type === 'inflow' ? 'outflow' : 'inflow'}`,
+      data: `a=type&p=${pid}&i=${i}&t=${type === 'inflow' ? 'outflow' : 'inflow'}`,
       displayText: type === 'inflow' ? '改成支出' : '改成收入',
     },
   });
   items.push({
     type: 'action',
-    action: { type: 'postback', label: '↪ 改成撥款', data: `a=alloc&p=${pid}&d=in&k=emergency`, displayText: '改成撥款' },
+    action: { type: 'postback', label: '↪ 改成撥款', data: `a=alloc&p=${pid}&i=${i}&d=in&k=emergency`, displayText: '改成撥款' },
   });
   return { items };
+}
+
+/** 多筆確認卡片：點任一列可改該筆分類 */
+export function batchCard(pid, entries, ledgerName) {
+  let inc = 0, exp = 0, alloc = 0;
+  for (const e of entries) {
+    if (e.type === 'inflow') inc += e.amount; else if (e.type === 'alloc') alloc += e.amount; else exp += e.amount;
+  }
+  const line = (e, i) => {
+    const isAlloc = e.type === 'alloc';
+    const label = isAlloc ? catLabel(e.type, e.category, e.account) : `${catLabel(e.type, e.category).split(' ')[0]} ${e.client}`;
+    const sign = isAlloc ? '' : e.type === 'inflow' ? '+' : '-';
+    const color = isAlloc ? '#A87B3D' : e.type === 'inflow' ? '#5B8C5A' : '#222222';
+    return {
+      type: 'box', layout: 'horizontal', spacing: 'sm', paddingTop: '6px', paddingBottom: '6px',
+      action: { type: 'postback', label: `修改第 ${i + 1} 筆`, data: `a=pick&p=${pid}&i=${i}` },
+      contents: [
+        { type: 'text', text: e.date.slice(5).replace('-', '/'), size: 'xs', color: '#8A8A8A', flex: 2, gravity: 'center' },
+        { type: 'text', text: label, size: 'sm', color: '#222222', flex: 6, wrap: true, gravity: 'center' },
+        { type: 'text', text: `${sign}$${fmt(e.amount)}`, size: 'sm', color, flex: 3, align: 'end', gravity: 'center' },
+      ],
+    };
+  };
+  const totals = [];
+  if (exp) totals.push(`支出 $${fmt(exp)}`);
+  if (inc) totals.push(`收入 $${fmt(inc)}`);
+  if (alloc) totals.push(`撥款 $${fmt(alloc)}`);
+  return {
+    type: 'flex',
+    altText: `確認 ${entries.length} 筆記帳`,
+    contents: {
+      type: 'bubble', size: 'mega',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: '#1F3A2E', paddingAll: '14px',
+        contents: [
+          { type: 'text', text: `確認 ${entries.length} 筆・${ledgerName || '主帳本'}`, color: '#FFFFFF', size: 'sm' },
+          { type: 'text', text: totals.join('　') || '$0', color: '#FFFFFF', size: 'lg', weight: 'bold', wrap: true },
+        ],
+      },
+      body: {
+        type: 'box', layout: 'vertical', spacing: 'none',
+        contents: [
+          ...entries.map(line).flatMap((b, i) => (i ? [{ type: 'separator', color: '#EEEEEE' }, b] : [b])),
+          { type: 'text', text: '點任一筆可修改分類', size: 'xxs', color: '#8A8A8A', margin: 'md' },
+        ],
+      },
+      footer: {
+        type: 'box', layout: 'vertical', spacing: 'sm',
+        contents: [
+          btn(`確認寫入 ${entries.length} 筆`, `a=ok&p=${pid}`, 'primary'),
+          btn('全部取消', `a=no&p=${pid}`),
+        ],
+      },
+    },
+  };
 }

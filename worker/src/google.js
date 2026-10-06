@@ -84,11 +84,14 @@ export async function readHeaderAndIds(token, sheetId, fetchImpl = fetch) {
   return { header, ids };
 }
 
-/** 依標題順序附加一列 */
-export async function appendTxn(token, sheetId, header, txn, fetchImpl = fetch) {
+/** 依標題順序附加多列（一次 API 呼叫） */
+export async function appendTxns(token, sheetId, header, txns, fetchImpl = fetch) {
   if (!header.length || header[0] !== 'id') throw new Error('Transactions 工作表標題列不符');
-  const row = header.map(h => (txn[h] === undefined ? '' : txn[h]));
+  if (!txns.length) return null;
+  const values = txns.map(txn => header.map(h => (txn[h] === undefined ? '' : txn[h])));
   return sheetsFetch(token,
     `/${sheetId}/values/${rng('A1')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
-    { method: 'POST', body: JSON.stringify({ values: [row] }) }, fetchImpl);
+    { method: 'POST', body: JSON.stringify({ values }) }, fetchImpl);
 }
+export const appendTxn = (token, sheetId, header, txn, fetchImpl = fetch) =>
+  appendTxns(token, sheetId, header, [txn], fetchImpl);

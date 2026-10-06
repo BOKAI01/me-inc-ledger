@@ -185,3 +185,43 @@ test('撥款：改方向、支出改成撥款再改回', async () => {
   const r = s.world.rows[1];
   assert.equal(r[1], 'outflow'); assert.equal(r[5], '存起來'); assert.equal(r[10], '');
 });
+
+test('多筆：一則訊息 3 筆 → 一張卡 → 一次寫入 3 列', async () => {
+  const s = setup();
+  await s.say('10/6 早餐 30\n10/6 午餐 150\n10/6 其他 14371');
+  const card = s.lastCard();
+  assert.match(card.altText, /確認 3 筆/);
+  const pid = s.pidOf(card);
+  await Promise.all([s.tap(`a=ok&p=${pid}`), s.tap(`a=ok&p=${pid}`)]);
+  assert.equal(s.world.rows.length, 3);
+  assert.equal(s.world.appendCalls, 1);
+  assert.deepEqual(s.world.rows.map(r => [r[3], r[5], r[4], r[2]]), [
+    ['2026-10-06', '早餐', 30, 'food'], ['2026-10-06', '午餐', 150, 'food'], ['2026-10-06', '其他', 14371, 'other_out'],
+  ]);
+  assert.equal(new Set(s.world.rows.map(r => r[0])).size, 3);       // id 不重複
+  assert.match(s.world.replies.find(r => /已寫入【主帳本】3 筆/.test(r.messages[0].text || ''))?.messages[0].text, /10\/06 其他 -\$14,371/);
+});
+
+test('多筆：日期標題行、改第 2 筆分類、看不懂的行另外列出', async () => {
+  const s = setup();
+  await s.say('10/5\n早餐 30\n電影 300\n亂打\n撥款 儲蓄 1000');
+  const [card, warn] = s.world.replies.at(-1).messages;
+  assert.match(card.altText, /確認 3 筆/);
+  assert.match(warn.text, /亂打/);
+  const pid = s.pidOf(card);
+  await s.tap(`a=pick&p=${pid}&i=1`);
+  assert.match(s.world.lastText(), /第 2 筆「電影」/);
+  await s.tap(`a=cat&p=${pid}&i=1&c=other_out`);
+  await s.tap(`a=ok&p=${pid}`);
+  assert.deepEqual(s.world.rows.map(r => [r[3], r[1], r[2]]), [
+    ['2026-10-05', 'outflow', 'food'], ['2026-10-05', 'outflow', 'other_out'], ['2026-10-05', 'alloc', 'alloc_in'],
+  ]);
+});
+
+test('多筆：全部看不懂、超過上限', async () => {
+  const s = setup();
+  await s.say('abc\ndef');
+  assert.match(s.world.lastText(), /看不懂這幾行/);
+  await s.say(Array.from({ length: 21 }, (_, i) => `午餐 ${i + 1}`).join('\n'));
+  assert.match(s.world.lastText(), /一次最多 20 筆/);
+});

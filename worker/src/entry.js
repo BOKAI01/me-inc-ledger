@@ -20,7 +20,10 @@ export class Entry {
 
   async handle(op, data = {}) {
     const s = this.storage;
-    const cur = await s.get('rec');
+    let cur = await s.get('rec');
+    if (cur && !cur.items && cur.entry) {               // v1 單筆格式
+      cur = { ...cur, items: [{ entry: cur.entry, txnId: cur.txnId, hadMemory: cur.hadMemory }] };
+    }
     switch (op) {
       case 'create': {
         if (cur) return { ok: true, rec: cur };
@@ -31,10 +34,13 @@ export class Entry {
       }
       case 'get':
         return { ok: !!cur, rec: cur || null };
-      case 'update': {                                   // 改分類／收支，只限待確認
+      case 'update': {                                   // 改第 i 筆的分類／收支，只限待確認
         if (!cur) return { ok: false, reason: 'missing' };
         if (cur.state !== 'pending') return { ok: false, reason: cur.state, rec: cur };
-        const rec = { ...cur, entry: { ...cur.entry, ...data } };
+        const i = Number(data.i) || 0;
+        if (!cur.items[i]) return { ok: false, reason: 'missing' };
+        const items = cur.items.map((it, k) => (k === i ? { ...it, entry: { ...it.entry, ...data.patch } } : it));
+        const rec = { ...cur, items };
         await s.put('rec', rec);
         return { ok: true, rec };
       }

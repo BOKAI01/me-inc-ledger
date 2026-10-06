@@ -55,28 +55,44 @@ const toHalfWidth =(s) => s
   .replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
   .replace(/　/g, ' ');
 
+/** 行首日期：今天／昨天／前天／M/D。回傳 { date, rest }，日期無效回傳 { error: true } */
+function takeDate(s, today) {
+  let m;
+  if ((m = s.match(/^(今天|昨天|前天)\s*/))) {
+    return { date: shiftDays(today, { 今天: 0, 昨天: -1, 前天: -2 }[m[1]]), rest: s.slice(m[0].length) };
+  }
+  if ((m = s.match(/^(\d{1,2})[\/.-](\d{1,2})(\s+|$)/))) {
+    const mo = Number(m[1]), d = Number(m[2]);
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return { error: true };
+    let y = Number(today.slice(0, 4));
+    const fmtD = (yy) => `${yy}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    if (fmtD(y) > today) y -= 1;                    // 未來日期視為去年
+    return { date: fmtD(y), rest: s.slice(m[0].length) };
+  }
+  return null;
+}
+
+/** 整行只有日期（多筆輸入時當作後續各行的預設日期） */
+export function parseDateOnly(raw, today) {
+  const s = toHalfWidth(String(raw || '')).trim();
+  const t = takeDate(s, today);
+  return t && !t.error && !t.rest.trim() ? t.date : null;
+}
+
 /**
  * 「午餐 120」「昨天 計程車 250」「10/3 電影 300」「+薪水 50000」「收入 獎金 3000」
  * 回傳 { type, category, amount, client, date } 或 null
+ * defaultDate：行首沒寫日期時使用（預設今天）
  */
-export function parseEntry(raw, today) {
+export function parseEntry(raw, today, defaultDate) {
   let s = toHalfWidth(String(raw || '')).trim();
   if (!s || s.length > 60) return null;
 
-  let date = today;
+  let date = defaultDate || today;
+  const t = takeDate(s, today);
+  if (t && t.error) return null;
+  if (t) { date = t.date; s = t.rest; }
   let m;
-  if ((m = s.match(/^(今天|昨天|前天)\s*/))) {
-    date = shiftDays(today, { 今天: 0, 昨天: -1, 前天: -2 }[m[1]]);
-    s = s.slice(m[0].length);
-  } else if ((m = s.match(/^(\d{1,2})[\/.-](\d{1,2})\s+/))) {
-    const mo = Number(m[1]), d = Number(m[2]);
-    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
-    let y = Number(today.slice(0, 4));
-    const cand = `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    if (cand > today) y -= 1;                       // 未來日期視為去年
-    date = `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    s = s.slice(m[0].length);
-  }
 
   let forceIncome = false;
   if ((m = s.match(/^(\+|收入\s+)/))) { forceIncome = true; s = s.slice(m[0].length); }
